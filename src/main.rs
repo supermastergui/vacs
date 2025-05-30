@@ -28,16 +28,18 @@ pub struct CircularBuffer {
     read_index: usize,
     write_index: usize,
     full: bool,
+    stereo_output: bool,
 }
 
 impl CircularBuffer {
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize, stereo_output: bool) -> Self {
         Self {
             buffer: vec![0.0; capacity],
             capacity,
             read_index: 0,
             write_index: 0,
             full: false,
+            stereo_output,
         }
     }
 
@@ -54,17 +56,32 @@ impl CircularBuffer {
     }
 
     pub fn pop_samples(&mut self, out: &mut [f32]) {
-        for sample in out.iter_mut() {
+        let mut pop_sample = || {
             if self.read_index == self.write_index && !self.full {
-                // buffer is empty
-                *sample = 0.0;
+                0.0
             } else {
-                *sample = self.buffer[self.read_index];
+                let sample = self.buffer[self.read_index];
                 self.read_index = (self.read_index + 1) % self.capacity;
                 self.full = false;
+                sample
+            }
+        };
+
+        if self.stereo_output {
+            assert!(out.len() % 2 == 0, "Stereo output must have even length");
+            for chunk in out.chunks_exact_mut(2) {
+                let sample = pop_sample();
+                chunk[0] = sample;
+                chunk[1] = sample;
+            }
+        } else {
+            for sample in out.iter_mut() {
+                *sample = pop_sample();
             }
         }
+
     }
+
 
     pub fn len(&self) -> usize {
         if self.full {
@@ -260,7 +277,7 @@ async fn main() -> Result<()> {
     input_stream.play().context("Failed to play input stream")?;
 
     peer_connection.on_track(Box::new(move |track, _, _| {
-        let jitter_buffer = Arc::new(Mutex::new(CircularBuffer::new(960 * 10))); // 200ms buffer at 20ms frames
+        let jitter_buffer = Arc::new(Mutex::new(CircularBuffer::new(960 * 10, output_device_config.channels == 2))); // 200ms buffer at 20ms frames
         let decoder = Arc::clone(&decoder);
         let jitter_buffer_clone = Arc::clone(&jitter_buffer);
         let output_device = Arc::clone(&output_device);
