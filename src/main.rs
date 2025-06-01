@@ -1,10 +1,14 @@
 use anyhow::{Context, Result};
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use clap::Parser;
 use config::{Config, Environment, File};
 use log::LevelFilter;
-use tokio::sync::mpsc;
+use std::io;
+use tokio::sync::{mpsc, watch};
 use vvcs::audio;
 use vvcs::config::LoggingConfig;
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,13 +21,66 @@ async fn main() -> Result<()> {
     let input_device = audio::Device::new(&config.audio.input, audio::DeviceType::Input)?;
     let output_device = audio::Device::new(&config.audio.output, audio::DeviceType::Output)?;
 
-    let (input_tx, _input_rx) = mpsc::channel::<audio::EncodedAudioFrame>(32);
+    let mut peer = vvcs::webrtc::Peer::new(config.webrtc)
+        .await
+        .context("Failed to create webrtc peer")?;
+
+    print!("Create offer? (y/N): ");
+    let create_offer = read_stdin()?.eq_ignore_ascii_case("y");
+
+    if create_offer {
+        let offer = peer.create_offer().await?;
+
+        println!("Copy offer SDP: {}", BASE64_STANDARD.encode(offer.sdp));
+
+        println!("Paste answer SDP: ");
+        let answer_input = BASE64_STANDARD
+            .decode(read_stdin()?)
+            .context("Failed to decode answer")?;
+        let answer = RTCSessionDescription::answer(String::from_utf8(answer_input)?)?;
+
+        peer.accept_answer(answer).await?;
+    } else {
+        println!("Paste offer SDP: ");
+        let offer_input = BASE64_STANDARD
+            .decode(read_stdin()?)
+            .context("Failed to decode offer")?;
+        let offer = RTCSessionDescription::offer(String::from_utf8(offer_input)?)?;
+
+        let answer = peer.accept_offer(offer).await?;
+
+        println!("Copy answer SDP: {}", BASE64_STANDARD.encode(answer.sdp));
+    }
+
+    let (input_tx, input_rx) = mpsc::channel::<audio::EncodedAudioFrame>(32);
+    let (output_tx, output_rx) = mpsc::channel::<audio::EncodedAudioFrame>(32);
+
+    peer.start(input_rx, output_tx)
+        .await
+        .context("Failed to start peer")?;
+
     let _input_stream = audio::input::start_capture(&input_device, input_tx)?;
 
-    let (_output_tx, output_rx) = mpsc::channel::<audio::EncodedAudioFrame>(32);
     let _output_stream = audio::output::start_playback(&output_device, output_rx)?;
 
+    let (_done_tx, mut done_rx) = watch::channel(());
+
+    tokio::select! {
+        _ = done_rx.changed() => {
+            log::info!("Received done signal, exiting");
+        },
+        _ = tokio::signal::ctrl_c() => {
+            log::info!("Received ctrl-c, exiting");
+        }
+    }
+
     Ok(())
+}
+
+fn read_stdin() -> Result<String> {
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(input.trim().to_string())
 }
 
 #[derive(Parser, Debug)]
@@ -70,5 +127,8 @@ fn load_config() -> Result<vvcs::config::AppConfig> {
 }
 
 fn init_logger(config: &LoggingConfig) {
-    env_logger::builder().filter_level(config.level).init();
+    env_logger::builder()
+        .filter_level(LevelFilter::Off) // disable logging of all other crates
+        .filter_module("vvcs", config.level)
+        .init();
 }
