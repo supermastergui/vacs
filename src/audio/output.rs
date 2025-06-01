@@ -4,11 +4,11 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use ringbuf::consumer::Consumer;
 use ringbuf::producer::Producer;
 use ringbuf::traits::Split;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc;
 
 pub fn start_playback(
     device: &Device,
-    mut rx: Receiver<EncodedAudioFrame>,
+    mut rx: mpsc::Receiver<EncodedAudioFrame>,
 ) -> Result<cpal::Stream> {
     log::debug!("Starting playback on device: {}", device);
 
@@ -45,7 +45,7 @@ pub fn start_playback(
                         *c = sample;
                     }
                 }
-                for out_sample in output.iter_mut().skip(zipped_len) {
+                for out_sample in output.iter_mut().skip(zipped_len * channels) {
                     *out_sample = cpal::Sample::EQUILIBRIUM;
                 }
             },

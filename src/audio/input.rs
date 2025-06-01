@@ -2,12 +2,14 @@ use crate::audio::{Device, EncodedAudioFrame, FRAME_SIZE, SAMPLE_RATE};
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use cpal::traits::{DeviceTrait, StreamTrait};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc;
 
 const MAX_OPUS_FRAME_SIZE: usize = 1275;
 
-pub fn start_capture(device: &Device, tx: Sender<EncodedAudioFrame>) -> Result<cpal::Stream> {
+pub fn start_capture(device: &Device, tx: mpsc::Sender<EncodedAudioFrame>) -> Result<cpal::Stream> {
     log::debug!("Starting capture on device: {}", device);
+
+    let mut input_buffer = Vec::<f32>::new();
 
     let mut encoder =
         opus::Encoder::new(SAMPLE_RATE, opus::Channels::Mono, opus::Application::Voip)
@@ -15,10 +17,6 @@ pub fn start_capture(device: &Device, tx: Sender<EncodedAudioFrame>) -> Result<c
     encoder.set_bitrate(opus::Bitrate::Max)?;
     encoder.set_inband_fec(true)?;
     encoder.set_vbr(false)?;
-
-    log::trace!("Opus encoder: {:?}", encoder);
-
-    let mut input_buffer = Vec::<f32>::new();
 
     let stream = device
         .device
@@ -34,7 +32,7 @@ pub fn start_capture(device: &Device, tx: Sender<EncodedAudioFrame>) -> Result<c
                         Ok(len) => {
                             let audio_frame = Bytes::copy_from_slice(&encoded[..len]);
                             if let Err(err) = tx.try_send(audio_frame) {
-                                log::error!("Failed to send input audio sample: {}", err);
+                                log::warn!("Failed to send input audio sample: {}", err);
                             }
                         }
                         Err(err) => log::error!("Failed to encode input audio frame: {}", err),
