@@ -1,1 +1,3 @@
-# vvcs
+# vacs
+
+VATSIM ATC Comm System

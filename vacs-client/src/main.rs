@@ -6,8 +6,8 @@ use config::{Config, Environment, File};
 use log::LevelFilter;
 use std::io;
 use tokio::sync::{mpsc, watch};
-use vvcs::audio;
-use vvcs::config::LoggingConfig;
+use vacs_core::audio;
+use vacs_core::config::LoggingConfig;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 #[tokio::main]
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
     let input_device = audio::Device::new(&config.audio.input, audio::DeviceType::Input)?;
     let output_device = audio::Device::new(&config.audio.output, audio::DeviceType::Output)?;
 
-    let mut peer = vvcs::webrtc::Peer::new(config.webrtc)
+    let mut peer = vacs_core::webrtc::Peer::new(config.webrtc)
         .await
         .context("Failed to create webrtc peer")?;
 
@@ -95,7 +95,7 @@ fn parse_args() -> CliArgs {
     CliArgs::parse()
 }
 
-fn load_config() -> Result<vvcs::config::AppConfig> {
+fn load_config() -> Result<vacs_core::config::AppConfig> {
     let settings = Config::builder()
         // Defaults
         .set_default("api.url", "http://localhost:8080")?
@@ -107,18 +107,18 @@ fn load_config() -> Result<vvcs::config::AppConfig> {
         // Config files overriding defaults
         .add_source(
             File::with_name(
-                directories::ProjectDirs::from("com", "vvcs", "vvcs")
+                directories::ProjectDirs::from("com", "vacs_core", "vacs_core")
                     .expect("Failed to get project dirs")
                     .config_local_dir()
                     .join("config.toml")
                     .to_str()
                     .expect("Failed to get local config path"),
             )
-            .required(false),
+                .required(false),
         )
         .add_source(File::with_name("config.toml").required(false))
         // Environment variables overriding config files
-        .add_source(Environment::with_prefix("VVCS"));
+        .add_source(Environment::with_prefix("vacs_core"));
 
     settings
         .build()?
@@ -129,6 +129,6 @@ fn load_config() -> Result<vvcs::config::AppConfig> {
 fn init_logger(config: &LoggingConfig) {
     env_logger::builder()
         .filter_level(LevelFilter::Off) // disable logging of all other crates
-        .filter_module("vvcs", config.level)
+        .filter_module("vacs_core", config.level)
         .init();
 }

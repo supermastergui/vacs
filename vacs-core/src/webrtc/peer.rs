@@ -4,18 +4,18 @@ use crate::webrtc::{WEBRTC_TRACK_ID, WEBRTC_TRACK_STREAM_ID};
 use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 use webrtc::api::APIBuilder;
+use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::media_engine::{MIME_TYPE_OPUS, MediaEngine};
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
+use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
-use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
 pub struct Peer {
     peer_connection: RTCPeerConnection,

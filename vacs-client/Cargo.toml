@@ -1,0 +1,20 @@
+[package]
+name = "vacs-client"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+vacs-core = { path = "../vacs-core" }
+anyhow = "1.0.98"
+base64 = "0.22.1"
+clap = { version = "4.5.39", features = ["derive"] }
+log = { workspace = true }
+tokio = { workspace = true }
+env_logger = "0.11.8"
+config = "0.15.11"
+webrtc = "0.13.0"
+directories = "6.0.0"
+
+[lints]
+workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "vacs-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+
+[dependencies]
+anyhow = "1.0.98"
+bytes = "1.10.1"
+cpal = "0.15.3"
+log = { workspace = true }
+opus = "0.3.0"
+ringbuf = "0.4.8"
+serde = { workspace = true }
+tokio = { workspace = true }
+webrtc = "0.13.0"
+
+[lints]
+workspace = true
