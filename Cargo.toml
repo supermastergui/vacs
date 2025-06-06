@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["vacs-client","vacs-core", "vacs-server", "vacs-shared"]
+members = ["vacs-client", "vacs-core", "vacs-server", "vacs-shared"]
 
 [workspace.package]
 version = "0.0.0"
@@ -11,5 +11,6 @@ publish = false
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.1", features = ["rt", "rt-multi-thread", "macros"] }
 log = { version = "0.4.27", features = ["serde"] }
+anyhow = "1.0.98"
 
 [workspace.lints]

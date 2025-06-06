@@ -1,16 +1,18 @@
 use serde::{Deserialize, Serialize};
 
 /// Possible reasons for a login failure.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum LoginFailureReason {
     /// The client's ID is already in use.
     IdTaken,
     /// The provided credentials are invalid.
     InvalidCredentials,
+    /// The login flow/initial handshake was performed incorrectly.
+    InvalidLoginFlow,
 }
 
 /// Represents the current or updated status of a client as observed by the signaling server.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum ClientStatus {
     /// The client is connected or just established connection to the signaling server.
     Connected,
@@ -19,16 +21,18 @@ pub enum ClientStatus {
 }
 
 /// Represents a client as observed by the signaling server.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Client {
     /// ID of the client.
-    id: String,
+    pub id: String,
+    /// Display (station) name of the client.
+    pub display_name: String,
     /// Current status of the client.
-    status: ClientStatus,
+    pub status: ClientStatus,
 }
 
 /// Represents a message exchanged between the signaling server and clients.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Message {
     /// A login message sent by the client upon initial connection, providing its ID and auth token.
     ///
@@ -105,6 +109,8 @@ pub enum Message {
         /// Contains the ID of the respective other peer during call setup.
         peer_id: String,
     },
+    /// A message sent by the signaling server if no peer with the given ID was found.
+    PeerNotFound,
     /// A message sent by a client to request a list of all currently connected clients.
     ListClients,
     /// A message sent by the signaling server, containing a full list of all currently connected clients.
@@ -320,10 +326,12 @@ mod tests {
             clients: vec![
                 Client {
                     id: "client1".to_string(),
+                    display_name: "station1".to_string(),
                     status: ClientStatus::Connected,
                 },
                 Client {
                     id: "client2".to_string(),
+                    display_name: "station2".to_string(),
                     status: ClientStatus::Disconnected,
                 },
             ],
@@ -332,7 +340,7 @@ mod tests {
         let serialized = Message::serialize(&message).unwrap();
         assert_eq!(
             serialized,
-            "{\"ClientList\":{\"clients\":[{\"id\":\"client1\",\"status\":\"Connected\"},{\"id\":\"client2\",\"status\":\"Disconnected\"}]}}"
+            "{\"ClientList\":{\"clients\":[{\"id\":\"client1\",\"display_name\":\"station1\",\"status\":\"Connected\"},{\"id\":\"client2\",\"display_name\":\"station2\",\"status\":\"Disconnected\"}]}}"
         );
 
         let deserialized = Message::deserialize(&serialized).unwrap();
@@ -353,6 +361,7 @@ mod tests {
         let message = Message::ClientUpdate {
             client: Client {
                 id: "client1".to_string(),
+                display_name: "station1".to_string(),
                 status: ClientStatus::Connected,
             },
         };
@@ -360,7 +369,7 @@ mod tests {
         let serialized = Message::serialize(&message).unwrap();
         assert_eq!(
             serialized,
-            "{\"ClientUpdate\":{\"client\":{\"id\":\"client1\",\"status\":\"Connected\"}}}"
+            "{\"ClientUpdate\":{\"client\":{\"id\":\"client1\",\"display_name\":\"station1\",\"status\":\"Connected\"}}}"
         );
 
         let deserialized = Message::deserialize(&serialized).unwrap();
