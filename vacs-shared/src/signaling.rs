@@ -342,10 +342,7 @@ mod tests {
         };
 
         let serialized = Message::serialize(&message).unwrap();
-        assert_eq!(
-            serialized,
-            "{\"ClientDisconnected\":{\"id\":\"client1\"}}"
-        );
+        assert_eq!(serialized, "{\"ClientDisconnected\":{\"id\":\"client1\"}}");
 
         let deserialized = Message::deserialize(&serialized).unwrap();
         match deserialized {

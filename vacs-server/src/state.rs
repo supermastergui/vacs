@@ -1,10 +1,11 @@
+use crate::config;
 use crate::ws::ClientSession;
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
-use futures_util::stream::SplitSink;
 use futures_util::SinkExt;
+use futures_util::stream::SplitSink;
 use std::collections::HashMap;
-use tokio::sync::{broadcast, mpsc, watch, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc, watch};
 use vacs_shared::signaling::{ClientInfo, Message};
 
 pub struct AppState {
@@ -16,7 +17,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(shutdown_rx: watch::Receiver<()>) -> Self {
-        let (broadcast_tx, _) = broadcast::channel(100);
+        let (broadcast_tx, _) = broadcast::channel(config::BROADCAST_CHANNEL_CAPACITY);
         Self {
             clients: RwLock::new(HashMap::new()),
             broadcast_tx,
@@ -38,7 +39,7 @@ impl AppState {
             anyhow::bail!("Client already exists");
         }
 
-        let (tx, rx) = mpsc::channel(100);
+        let (tx, rx) = mpsc::channel(config::CLIENT_CHANNEL_CAPACITY);
         let client = ClientSession::new(
             ClientInfo {
                 id: client_id.to_string(),

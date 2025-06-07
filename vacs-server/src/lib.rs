@@ -1,4 +1,5 @@
 pub mod app;
-pub mod ws;
-pub mod state;
 mod auth;
+pub mod config;
+pub mod state;
+pub mod ws;

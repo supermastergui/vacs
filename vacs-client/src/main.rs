@@ -107,7 +107,7 @@ fn load_config() -> Result<vacs_core::config::AppConfig> {
         // Config files overriding defaults
         .add_source(
             File::with_name(
-                directories::ProjectDirs::from("com", "vacs_core", "vacs_core")
+                directories::ProjectDirs::from("app", "vacs", "vacs-client")
                     .expect("Failed to get project dirs")
                     .config_local_dir()
                     .join("config.toml")
@@ -118,7 +118,7 @@ fn load_config() -> Result<vacs_core::config::AppConfig> {
         )
         .add_source(File::with_name("config.toml").required(false))
         // Environment variables overriding config files
-        .add_source(Environment::with_prefix("vacs_core"));
+        .add_source(Environment::with_prefix("vacs_client"));
 
     settings
         .build()?

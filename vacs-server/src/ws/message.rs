@@ -1,8 +1,8 @@
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
-use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
+use futures_util::stream::{SplitSink, SplitStream};
 use vacs_shared::signaling;
 
 /// Represents the outcome of [`receive_message`], indicating whether the message received should be handled, skipped or receiving errored.

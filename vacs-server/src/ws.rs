@@ -1,7 +1,7 @@
-mod handler;
-mod client;
-pub mod message;
 mod application_message;
+mod client;
+mod handler;
+pub mod message;
 
-pub use handler::ws_handler;
 pub use client::ClientSession;
+pub use handler::ws_handler;

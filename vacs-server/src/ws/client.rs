@@ -1,7 +1,7 @@
 use crate::state::AppState;
 use crate::ws::application_message::handle_application_message;
 use crate::ws::message::receive_message;
-use crate::ws::message::{send_message, MessageResult};
+use crate::ws::message::{MessageResult, send_message};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};

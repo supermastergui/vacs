@@ -1,4 +1,5 @@
-use crate::ws::message::{receive_message, send_message, MessageResult};
+use crate::config;
+use crate::ws::message::{MessageResult, receive_message, send_message};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -20,9 +21,7 @@ pub async fn handle_login(
     websocket_sender: &mut SplitSink<WebSocket, ws::Message>,
 ) -> Option<String> {
     tracing::trace!("Handling login flow");
-    let login_timeout = tokio::time::Duration::from_secs(10);
-
-    tokio::time::timeout(login_timeout, async {
+    tokio::time::timeout(config::LOGIN_FLOW_TIMEOUT, async {
         loop {
             return match receive_message(websocket_receiver).await {
                 MessageResult::ApplicationMessage(signaling::Message::Login { id, token }) => {
