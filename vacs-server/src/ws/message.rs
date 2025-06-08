@@ -84,77 +84,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_util::{Sink, Stream};
-    use std::pin::Pin;
+    use crate::ws::test_util::*;
     use std::sync::Arc;
-    use std::task::{Context, Poll};
     use tokio::sync::{mpsc, Mutex};
     use tokio_tungstenite::tungstenite;
-
-    #[derive(Debug)]
-    struct MockSinkError(String);
-
-    impl std::fmt::Display for MockSinkError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "MockSinkError: {}", self.0)
-        }
-    }
-
-    impl std::error::Error for MockSinkError {}
-
-    struct MockSink {
-        tx: mpsc::UnboundedSender<ws::Message>,
-    }
-
-    impl Sink<ws::Message> for MockSink {
-        type Error = MockSinkError;
-
-        fn poll_ready(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn start_send(self: Pin<&mut Self>, item: ws::Message) -> Result<(), Self::Error> {
-            self.tx.send(item).map_err(|e| MockSinkError(e.to_string()))
-        }
-
-        fn poll_flush(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_close(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-        ) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    struct MockStream {
-        messages: Vec<Result<ws::Message, axum::Error>>,
-    }
-
-    impl Stream for MockStream {
-        type Item = Result<ws::Message, axum::Error>;
-
-        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            if self.messages.is_empty() {
-                Poll::Ready(None)
-            } else {
-                Poll::Ready(Some(self.messages.remove(0)))
-            }
-        }
-    }
 
     #[tokio::test]
     async fn send_single_message() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut mock_sink = MockSink { tx };
+        let mut mock_sink = MockSink::new(tx);
 
         let message = signaling::Message::ClientConnected {
             client: signaling::ClientInfo {
@@ -181,7 +119,7 @@ mod tests {
     #[tokio::test]
     async fn send_multiple_messages() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut mock_sink = MockSink { tx };
+        let mut mock_sink = MockSink::new(tx);
 
         let messages = vec![
             signaling::Message::Login {
@@ -211,7 +149,7 @@ mod tests {
     #[tokio::test]
     async fn send_messages_concurrently() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mock_sink = Arc::new(Mutex::new(MockSink { tx }));
+        let mock_sink = Arc::new(Mutex::new(MockSink::new(tx)));
 
         let messages = vec![
             signaling::Message::Login {
@@ -259,7 +197,7 @@ mod tests {
     async fn send_message_sink_disconnected() {
         let (tx, rx) = mpsc::unbounded_channel();
         drop(rx); // Drop the receiver to simulate the sink being disconnected.
-        let mut mock_sink = MockSink { tx };
+        let mut mock_sink = MockSink::new(tx);
 
         let message = signaling::Message::ClientConnected {
             client: signaling::ClientInfo {
@@ -277,11 +215,9 @@ mod tests {
 
     #[tokio::test]
     async fn receive_single_message() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::from(
-                "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
-            ))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::from(
+            "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
+        ))]);
 
         let result = receive_message(&mut mock_stream).await;
 
@@ -296,17 +232,15 @@ mod tests {
 
     #[tokio::test]
     async fn receive_multiple_messages() {
-        let mut mock_stream = MockStream {
-            messages: vec![
-                Ok(ws::Message::from(
-                    "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
-                )),
-                Ok(ws::Message::from("\"Logout\"")),
-                Ok(ws::Message::from(
-                    "{\"CallOffer\":{\"peer_id\":\"client1\",\"sdp\":\"sdp1\"}}",
-                )),
-            ],
-        };
+        let mut mock_stream = MockStream::new(vec![
+            Ok(ws::Message::from(
+                "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
+            )),
+            Ok(ws::Message::from("\"Logout\"")),
+            Ok(ws::Message::from(
+                "{\"CallOffer\":{\"peer_id\":\"client1\",\"sdp\":\"sdp1\"}}",
+            )),
+        ]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -330,17 +264,15 @@ mod tests {
 
     #[tokio::test]
     async fn receive_messages_concurrently() {
-        let mock_stream = Arc::new(Mutex::new(MockStream {
-            messages: vec![
-                Ok(ws::Message::from(
-                    "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
-                )),
-                Ok(ws::Message::from("\"Logout\"")),
-                Ok(ws::Message::from(
-                    "{\"CallOffer\":{\"peer_id\":\"client1\",\"sdp\":\"sdp1\"}}",
-                )),
-            ],
-        }));
+        let mock_stream = Arc::new(Mutex::new(MockStream::new(vec![
+            Ok(ws::Message::from(
+                "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
+            )),
+            Ok(ws::Message::from("\"Logout\"")),
+            Ok(ws::Message::from(
+                "{\"CallOffer\":{\"peer_id\":\"client1\",\"sdp\":\"sdp1\"}}",
+            )),
+        ])));
 
         let mut tasks = vec![];
         for _ in 0..3 {
@@ -365,9 +297,7 @@ mod tests {
     #[tokio::test]
     async fn receive_replayed_messages() {
         let msg = ws::Message::from("{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}");
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(msg.clone()), Ok(msg)],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(msg.clone()), Ok(msg)]);
 
         for _ in 0..2 {
             assert_eq!(
@@ -382,12 +312,10 @@ mod tests {
 
     #[tokio::test]
     async fn receive_control_messages() {
-        let mut mock_stream = MockStream {
-            messages: vec![
-                Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
-                Ok(ws::Message::Pong(tungstenite::Bytes::from("pong"))),
-            ],
-        };
+        let mut mock_stream = MockStream::new(vec![
+            Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
+            Ok(ws::Message::Pong(tungstenite::Bytes::from("pong"))),
+        ]);
 
         for _ in 0..2 {
             assert_eq!(
@@ -399,9 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_close_message() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Close(None))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Close(None))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -411,12 +337,10 @@ mod tests {
 
     #[tokio::test]
     async fn receive_close_message_with_close_frame() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Close(Some(ws::CloseFrame {
-                reason: ws::Utf8Bytes::from("goodbye"),
-                code: 69,
-            })))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Close(Some(ws::CloseFrame {
+            reason: ws::Utf8Bytes::from("goodbye"),
+            code: 69,
+        })))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -426,13 +350,11 @@ mod tests {
 
     #[tokio::test]
     async fn receive_mixed_messages() {
-        let mut mock_stream = MockStream {
-            messages: vec![
-                Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
-                Ok(ws::Message::from("\"Logout\"")),
-                Ok(ws::Message::Pong(tungstenite::Bytes::from("pong"))),
-            ],
-        };
+        let mut mock_stream = MockStream::new(vec![
+            Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
+            Ok(ws::Message::from("\"Logout\"")),
+            Ok(ws::Message::Pong(tungstenite::Bytes::from("pong"))),
+        ]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -450,9 +372,8 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_deserialization_error() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("invalid")))],
-        };
+        let mut mock_stream =
+            MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("invalid")))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -462,9 +383,8 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_invalid_json() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("\"Logout")))],
-        };
+        let mut mock_stream =
+            MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("\"Logout")))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -474,11 +394,9 @@ mod tests {
 
     #[tokio::test]
     async fn receive_unknown_message_type() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Text(ws::Utf8Bytes::from(
-                "{\"InvalidMessageType\":{\"unknown_field\":\"value\"}}",
-            )))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from(
+            "{\"InvalidMessageType\":{\"unknown_field\":\"value\"}}",
+        )))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -488,9 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_empty_text() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("")))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("")))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -500,11 +416,9 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_abrupt_disconnect() {
-        let mut mock_stream = MockStream {
-            messages: vec![Err(axum::Error::new(tungstenite::Error::Io(
-                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Abrupt disconnection"),
-            )))],
-        };
+        let mut mock_stream = MockStream::new(vec![Err(axum::Error::new(tungstenite::Error::Io(
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Abrupt disconnection"),
+        )))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -514,9 +428,9 @@ mod tests {
 
     #[tokio::test]
     async fn receive_unexpected_message() {
-        let mut mock_stream = MockStream {
-            messages: vec![Ok(ws::Message::Binary(tungstenite::Bytes::from("binary")))],
-        };
+        let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Binary(
+            tungstenite::Bytes::from("binary"),
+        ))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -526,9 +440,9 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_socket_error() {
-        let mut mock_stream = MockStream {
-            messages: vec![Err(axum::Error::new(tungstenite::Error::ConnectionClosed))],
-        };
+        let mut mock_stream = MockStream::new(vec![Err(axum::Error::new(
+            tungstenite::Error::ConnectionClosed,
+        ))]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,
@@ -538,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn receive_message_stream_end() {
-        let mut mock_stream = MockStream { messages: vec![] };
+        let mut mock_stream = MockStream::new(vec![]);
 
         assert_eq!(
             receive_message(&mut mock_stream).await,

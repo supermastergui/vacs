@@ -117,3 +117,220 @@ impl ClientSession {
         tracing::debug!("Finished handling client interaction");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use crate::ws::test_util::{MockSink, MockStream};
+    use axum::extract::ws;
+    use axum::extract::ws::Utf8Bytes;
+    use std::sync::Mutex;
+    use vacs_shared::signaling::ClientInfo;
+
+    struct TestSetup {
+        pub app_state: Arc<AppState>,
+        pub session: ClientSession,
+        pub mock_sink: MockSink,
+        pub mock_stream: MockStream,
+        pub websocket_rx: Arc<Mutex<mpsc::UnboundedReceiver<ws::Message>>>,
+        pub rx: mpsc::Receiver<Message>,
+        pub broadcast_rx: broadcast::Receiver<Message>,
+        pub shutdown_tx: watch::Sender<()>,
+    }
+
+    impl TestSetup {
+        fn new() -> Self {
+            let (shutdown_tx, shutdown_rx) = watch::channel(());
+            let app_state = Arc::new(AppState::new(AppConfig::default(), shutdown_rx));
+            let client_info = ClientInfo {
+                id: "client1".to_string(),
+                display_name: "Client 1".to_string(),
+            };
+            let (tx, rx) = mpsc::channel(10);
+            let session = ClientSession::new(client_info, tx);
+            let (websocket_tx, websocket_rx) = mpsc::unbounded_channel();
+            let mock_sink = MockSink::new(websocket_tx);
+            let mock_stream = MockStream::new(vec![]);
+            let (_broadcast_tx, broadcast_rx) = broadcast::channel(10);
+
+            Self {
+                app_state,
+                session,
+                mock_sink,
+                mock_stream,
+                websocket_rx: Arc::new(Mutex::new(websocket_rx)),
+                rx,
+                broadcast_rx,
+                shutdown_tx,
+            }
+        }
+
+        fn with_messages(mut self, messages: Vec<Result<ws::Message, axum::Error>>) -> Self {
+            self.mock_stream = MockStream::new(messages);
+            self
+        }
+
+        async fn register_client(
+            &self,
+            client_id: &str,
+        ) -> anyhow::Result<(ClientSession, mpsc::Receiver<Message>)> {
+            self.app_state.register_client(client_id).await
+        }
+
+        fn spawn_handle_interaction(mut self) -> tokio::task::JoinHandle<()> {
+            tokio::spawn(async move {
+                self.session
+                    .handle_interaction(
+                        &self.app_state,
+                        &mut self.mock_stream,
+                        &mut self.mock_sink,
+                        &mut self.broadcast_rx,
+                        &mut self.rx,
+                        &mut self.shutdown_tx.subscribe(),
+                    )
+                    .await
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn new_client_session() {
+        let client_info = ClientInfo {
+            id: "client1".to_string(),
+            display_name: "Client 1".to_string(),
+        };
+        let (tx, _rx) = mpsc::channel(10);
+        let session = ClientSession::new(client_info.clone(), tx);
+
+        assert_eq!(session.get_id(), "client1");
+        assert_eq!(session.get_client_info(), &client_info);
+    }
+
+    #[tokio::test]
+    async fn send_message() {
+        let client_info = ClientInfo {
+            id: "client1".to_string(),
+            display_name: "Client 1".to_string(),
+        };
+        let (tx, mut rx) = mpsc::channel(10);
+        let session = ClientSession::new(client_info, tx);
+
+        let message = Message::ClientList {
+            clients: vec![ClientInfo {
+                id: "client2".to_string(),
+                display_name: "Client 2".to_string(),
+            }],
+        };
+        let result = session.send_message(message.clone()).await;
+
+        assert!(result.is_ok());
+        let received = rx.recv().await.expect("Expected message to be received");
+        assert_eq!(received, message);
+    }
+
+    #[tokio::test]
+    async fn send_message_error() {
+        let client_info = ClientInfo {
+            id: "client1".to_string(),
+            display_name: "Client 1".to_string(),
+        };
+        let (tx, _) = mpsc::channel(10);
+        let session = ClientSession::new(client_info, tx.clone());
+        drop(tx); // Drop the sender to simulate the client disconnecting
+
+        let message = Message::ClientList {
+            clients: vec![ClientInfo {
+                id: "client2".to_string(),
+                display_name: "Client 2".to_string(),
+            }],
+        };
+        let result = session.send_message(message.clone()).await;
+
+        assert!(result.is_err_and(|err| err.to_string().contains("Failed to send message")));
+    }
+
+    #[tokio::test]
+    async fn initial_client_list() {
+        let setup = TestSetup::new();
+        setup.register_client("client1").await.unwrap();
+        let websocket_rx = setup.websocket_rx.clone();
+
+        let handle_task = setup.spawn_handle_interaction();
+
+        let message = websocket_rx.lock().unwrap().recv().await;
+        match message {
+            Some(ws::Message::Text(text)) => {
+                assert_eq!(
+                    text,
+                    Utf8Bytes::from_static(
+                        r#"{"ClientList":{"clients":[{"id":"client1","display_name":"client1"}]}}"#
+                    )
+                );
+            }
+            _ => panic!("Expected client list message"),
+        }
+
+        handle_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn handle_interaction() {
+        let setup = TestSetup::new().with_messages(vec![Ok(ws::Message::Text(
+            Utf8Bytes::from_static(r#"{"CallOffer":{"peer_id":"client2","sdp":"sdp1"}}"#),
+        ))]);
+        let (_, mut client2_rx) = setup.register_client("client2").await.unwrap();
+        let websocket_rx = setup.websocket_rx.clone();
+
+        let handle_task = setup.spawn_handle_interaction();
+
+        let message = websocket_rx.lock().unwrap().recv().await;
+        match message {
+            Some(ws::Message::Text(text)) => {
+                assert_eq!(
+                    text,
+                    Utf8Bytes::from_static(
+                        r#"{"ClientList":{"clients":[{"id":"client2","display_name":"client2"}]}}"#
+                    )
+                );
+            }
+            _ => panic!("Expected client list message"),
+        }
+
+        let call_offer = client2_rx.recv().await.unwrap();
+        assert_eq!(
+            call_offer,
+            Message::CallOffer {
+                peer_id: "client1".to_string(),
+                sdp: "sdp1".to_string()
+            }
+        );
+
+        handle_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn handle_interaction_websocket_error() {
+        let setup = TestSetup::new().with_messages(vec![Err(axum::Error::new("Test error"))]);
+        let websocket_rx = setup.websocket_rx.clone();
+
+        let handle_task = setup.spawn_handle_interaction();
+
+        let message = websocket_rx.lock().unwrap().recv().await;
+        match message {
+            Some(ws::Message::Text(text)) => {
+                assert_eq!(
+                    text,
+                    Utf8Bytes::from_static(
+                        r#"{"ClientList":{"clients":[]}}"#
+                    )
+                );
+            }
+            _ => panic!("Expected client list message"),
+        }
+
+        assert!(websocket_rx.lock().unwrap().is_closed());
+
+        handle_task.await.unwrap();
+    }
+}
