@@ -8,12 +8,13 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite};
 use vacs_server::app::create_app;
+use vacs_server::config::{AppConfig, AuthConfig, ServerConfig};
 use vacs_server::state::AppState;
 use vacs_shared::signaling;
 
 #[allow(unused)]
 pub struct TestApp {
-    state: Arc<AppState>,
+    pub state: Arc<AppState>,
     addr: String,
     shutdown_tx: watch::Sender<()>,
 }
@@ -21,8 +22,16 @@ pub struct TestApp {
 impl TestApp {
     #[allow(unused)]
     pub async fn new() -> Self {
+        let config = AppConfig {
+            auth: AuthConfig {
+                login_flow_timeout_secs: 1,
+            },
+            server: ServerConfig {
+                bind_addr: "127.0.0.1:0".to_string(),
+            },
+        };
         let (shutdown_tx, shutdown_rx) = watch::channel(());
-        let app_state = Arc::new(AppState::new(shutdown_rx));
+        let app_state = Arc::new(AppState::new(config, shutdown_rx));
 
         let app = create_app();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -28,7 +28,13 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
     let (mut websocket_sender, mut websocket_receiver) = socket.split();
 
-    let client_id = match handle_login(&mut websocket_receiver, &mut websocket_sender).await {
+    let client_id = match handle_login(
+        &state.config.auth,
+        &mut websocket_receiver,
+        &mut websocket_sender,
+    )
+    .await
+    {
         Some(id) => id,
         None => return,
     };

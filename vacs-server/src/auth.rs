@@ -1,8 +1,9 @@
-use crate::config;
+use crate::config::AuthConfig;
 use crate::ws::message::{MessageResult, receive_message, send_message};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};
+use std::time::Duration;
 use vacs_shared::signaling;
 
 pub async fn verify_token(_client_id: &str, token: &str) -> anyhow::Result<()> {
@@ -17,11 +18,12 @@ pub async fn verify_token(_client_id: &str, token: &str) -> anyhow::Result<()> {
 }
 
 pub async fn handle_login(
+    auth_config: &AuthConfig,
     websocket_receiver: &mut SplitStream<WebSocket>,
     websocket_sender: &mut SplitSink<WebSocket, ws::Message>,
 ) -> Option<String> {
     tracing::trace!("Handling login flow");
-    tokio::time::timeout(config::LOGIN_FLOW_TIMEOUT, async {
+    tokio::time::timeout(Duration::from_secs(auth_config.login_flow_timeout_secs), async {
         loop {
             return match receive_message(websocket_receiver).await {
                 MessageResult::ApplicationMessage(signaling::Message::Login { id, token }) => {

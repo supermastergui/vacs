@@ -61,7 +61,7 @@ async fn invalid_login() {
 }
 
 #[tokio::test]
-async fn invalid_login_flow() {
+async fn unauthorized_message_before_login() {
     let test_app = TestApp::new().await;
 
     let mut ws_stream = connect_to_websocket(test_app.addr()).await;
@@ -87,6 +87,48 @@ async fn invalid_login_flow() {
 }
 
 #[tokio::test]
+async fn simultaneous_login_attempts() {
+    let test_app = TestApp::new().await;
+
+    let attempt1 = TestClient::new(test_app.addr(), "client1", "token1", |_| {});
+    let attempt2 = TestClient::new(test_app.addr(), "client1", "token1", |_| {});
+
+    let (attempt1_result, attempt2_result) = tokio::join!(attempt1, attempt2);
+
+    assert!(
+        (attempt1_result.is_ok() && attempt2_result.is_err())
+            || (attempt1_result.is_err() && attempt2_result.is_ok()),
+        "Expected one attempt to succeed and one to fail with IdTaken"
+    );
+}
+
+#[tokio::test]
+async fn login_timeout() {
+    let test_app = TestApp::new().await;
+
+    let mut ws_stream = connect_to_websocket(test_app.addr()).await;
+
+    tokio::time::sleep(Duration::from_secs(
+        test_app.state.config.auth.login_flow_timeout_secs,
+    ))
+    .await;
+
+    ws_stream
+        .send(tungstenite::Message::from(
+            signaling::Message::serialize(&signaling::Message::Login {
+                id: "client1".to_string(),
+                token: "token".to_string(),
+            })
+            .unwrap(),
+        ))
+        .await
+        .expect("Failed to send login message");
+
+    let message_result = ws_stream.next().await;
+    assert!(message_result.is_none() || matches!(message_result, Some(Err(_))));
+}
+
+#[tokio::test]
 async fn client_connected() {
     let test_app = TestApp::new().await;
 
@@ -97,7 +139,9 @@ async fn client_connected() {
     .await;
 
     let client1 = clients.get_mut("client1").unwrap();
-    let client_connected = client1.receive_with_timeout(Duration::from_secs(1)).await;
+    let client_connected = client1
+        .receive_with_timeout(Duration::from_millis(100))
+        .await;
     assert_message_matches(client_connected, |message| match message {
         signaling::Message::ClientConnected { client } => {
             assert_eq!(client.id, "client2");
@@ -109,7 +153,7 @@ async fn client_connected() {
     let client2 = clients.get_mut("client2").unwrap();
     assert!(
         client2
-            .receive_with_timeout(Duration::from_secs(1))
+            .receive_with_timeout(Duration::from_millis(100))
             .await
             .is_none()
     );
@@ -126,7 +170,9 @@ async fn client_disconnected() {
     .await;
 
     let client1 = clients.get_mut("client1").unwrap();
-    let client_connected = client1.receive_with_timeout(Duration::from_secs(1)).await;
+    let client_connected = client1
+        .receive_with_timeout(Duration::from_millis(100))
+        .await;
     assert_message_matches(client_connected, |message| match message {
         signaling::Message::ClientConnected { client } => {
             assert_eq!(client.id, "client2");
@@ -138,7 +184,9 @@ async fn client_disconnected() {
     client1.close().await;
 
     let client2 = clients.get_mut("client2").unwrap();
-    let client_disconnected = client2.receive_with_timeout(Duration::from_secs(1)).await;
+    let client_disconnected = client2
+        .receive_with_timeout(Duration::from_millis(100))
+        .await;
     assert_message_matches(client_disconnected, |message| match message {
         signaling::Message::ClientDisconnected { id } => assert_eq!(id, "client1"),
         _ => panic!("Unexpected message: {:?}", message),
@@ -181,7 +229,9 @@ async fn logout() {
     .await;
 
     let client1 = clients.get_mut("client1").unwrap();
-    let client_connected = client1.receive_with_timeout(Duration::from_secs(1)).await;
+    let client_connected = client1
+        .receive_with_timeout(Duration::from_millis(100))
+        .await;
     assert_message_matches(client_connected, |message| match message {
         signaling::Message::ClientConnected { client } => {
             assert_eq!(client.id, "client2");
@@ -193,13 +243,15 @@ async fn logout() {
     client1.send(signaling::Message::Logout).await.unwrap();
     assert!(
         client1
-            .receive_with_timeout(Duration::from_secs(1))
+            .receive_with_timeout(Duration::from_millis(100))
             .await
             .is_none()
     );
 
     let client2 = clients.get_mut("client2").unwrap();
-    let client_disconnected = client2.receive_with_timeout(Duration::from_secs(1)).await;
+    let client_disconnected = client2
+        .receive_with_timeout(Duration::from_millis(100))
+        .await;
     assert_message_matches(client_disconnected, |message| match message {
         signaling::Message::ClientDisconnected { id } => assert_eq!(id, "client1"),
         _ => panic!("Unexpected message: {:?}", message),

@@ -28,7 +28,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let app_state = Arc::new(AppState::new(shutdown_rx.clone()));
+    let app_state = Arc::new(AppState::new(config.clone(), shutdown_rx.clone()));
     let app = create_app();
 
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr).await?;
@@ -48,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
 fn load_config() -> anyhow::Result<AppConfig> {
     Config::builder()
         .set_default("server.bind_addr", "127.0.0.1:3000")?
+        .set_default("auth.login_flow_timeout_secs", 10)?
         .add_source(
             File::with_name(
                 directories::ProjectDirs::from("app", "vacs", "vacs-server")

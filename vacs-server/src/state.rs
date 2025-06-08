@@ -1,4 +1,5 @@
 use crate::config;
+use crate::config::AppConfig;
 use crate::ws::ClientSession;
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
@@ -9,6 +10,7 @@ use tokio::sync::{RwLock, broadcast, mpsc, watch};
 use vacs_shared::signaling::{ClientInfo, Message};
 
 pub struct AppState {
+    pub config: AppConfig,
     /// Key: CID
     clients: RwLock<HashMap<String, ClientSession>>,
     broadcast_tx: broadcast::Sender<Message>,
@@ -16,9 +18,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(shutdown_rx: watch::Receiver<()>) -> Self {
+    pub fn new(config: AppConfig, shutdown_rx: watch::Receiver<()>) -> Self {
         let (broadcast_tx, _) = broadcast::channel(config::BROADCAST_CHANNEL_CAPACITY);
         Self {
+            config,
             clients: RwLock::new(HashMap::new()),
             broadcast_tx,
             shutdown_rx,
