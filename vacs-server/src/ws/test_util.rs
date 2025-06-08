@@ -1,8 +1,14 @@
+use crate::config::AppConfig;
+use crate::state::AppState;
+use crate::ws::ClientSession;
 use axum::extract::ws;
 use futures_util::{Sink, Stream};
+use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc, watch};
+use vacs_shared::signaling::{ClientInfo, Message};
 
 pub struct MockSink {
     tx: mpsc::UnboundedSender<ws::Message>,
@@ -53,5 +59,94 @@ impl Stream for MockStream {
         } else {
             Poll::Ready(Some(self.messages.remove(0)))
         }
+    }
+}
+
+pub struct TestSetup {
+    pub app_state: Arc<AppState>,
+    pub session: ClientSession,
+    pub mock_sink: MockSink,
+    pub mock_stream: MockStream,
+    pub websocket_rx: Arc<Mutex<mpsc::UnboundedReceiver<ws::Message>>>,
+    pub rx: mpsc::Receiver<Message>,
+    pub broadcast_rx: broadcast::Receiver<Message>,
+    pub shutdown_tx: watch::Sender<()>,
+}
+
+impl TestSetup {
+    pub fn new() -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(());
+        let app_state = Arc::new(AppState::new(AppConfig::default(), shutdown_rx));
+        let client_info = ClientInfo {
+            id: "client1".to_string(),
+            display_name: "Client 1".to_string(),
+        };
+        let (tx, rx) = mpsc::channel(10);
+        let session = ClientSession::new(client_info, tx);
+        let (websocket_tx, websocket_rx) = mpsc::unbounded_channel();
+        let mock_sink = MockSink::new(websocket_tx);
+        let mock_stream = MockStream::new(vec![]);
+        let (_broadcast_tx, broadcast_rx) = broadcast::channel(10);
+
+        Self {
+            app_state,
+            session,
+            mock_sink,
+            mock_stream,
+            websocket_rx: Arc::new(Mutex::new(websocket_rx)),
+            rx,
+            broadcast_rx,
+            shutdown_tx,
+        }
+    }
+
+    pub fn with_messages(mut self, messages: Vec<Result<ws::Message, axum::Error>>) -> Self {
+        self.mock_stream = MockStream::new(messages);
+        self
+    }
+
+    pub async fn register_client(
+        &self,
+        client_id: &str,
+    ) -> (ClientSession, mpsc::Receiver<Message>) {
+        self.app_state
+            .register_client(client_id)
+            .await
+            .expect("Failed to register client")
+    }
+
+    pub async fn register_clients(
+        &self,
+        client_ids: Vec<&str>,
+    ) -> HashMap<String, (ClientSession, mpsc::Receiver<Message>)> {
+        futures_util::future::join_all(client_ids.iter().map(|&client_id| async move {
+            (client_id.to_string(), self.register_client(client_id).await)
+        }))
+        .await
+        .into_iter()
+        .collect()
+    }
+
+    pub async fn take_last_websocket_message(&mut self) -> Option<ws::Message> {
+        self.websocket_rx
+            .lock()
+            .expect("Failed to lock websocket receiver")
+            .recv()
+            .await
+    }
+
+    pub fn spawn_session_handle_interaction(mut self) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            self.session
+                .handle_interaction(
+                    &self.app_state,
+                    self.mock_stream,
+                    self.mock_sink,
+                    &mut self.broadcast_rx,
+                    &mut self.rx,
+                    &mut self.shutdown_tx.subscribe(),
+                )
+                .await
+        })
     }
 }

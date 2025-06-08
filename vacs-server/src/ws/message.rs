@@ -1,8 +1,8 @@
+use crate::ws::traits::{WebSocketSink, WebSocketStream};
 use axum::extract::ws;
 use futures_util::SinkExt;
 use futures_util::StreamExt;
 use vacs_shared::signaling;
-use crate::ws::traits::{WebSocketSink, WebSocketStream};
 
 /// Represents the outcome of [`receive_message`], indicating whether the message received should be handled, skipped or receiving errored.
 #[derive(Debug)]
@@ -34,8 +34,7 @@ impl PartialEq for MessageResult {
 pub async fn send_message<T: WebSocketSink>(
     websocket_tx: &mut T,
     message: signaling::Message,
-) -> anyhow::Result<()>
-{
+) -> anyhow::Result<()> {
     let serialized_message = signaling::Message::serialize(&message)
         .map_err(|e| anyhow::anyhow!(e).context("Failed to serialize message"))?;
     websocket_tx
@@ -45,8 +44,7 @@ pub async fn send_message<T: WebSocketSink>(
     Ok(())
 }
 
-pub async fn receive_message<R: WebSocketStream>(websocket_rx: &mut R) -> MessageResult
-{
+pub async fn receive_message<R: WebSocketStream>(websocket_rx: &mut R) -> MessageResult {
     match websocket_rx.next().await {
         Some(Ok(ws::Message::Text(raw_message))) => {
             match signaling::Message::deserialize(&raw_message) {
@@ -83,10 +81,11 @@ mod tests {
     use crate::ws::test_util::*;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
+    use test_log::test;
     use tokio::sync::{Mutex, mpsc};
     use tokio_tungstenite::tungstenite;
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_single_message() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut mock_sink = MockSink::new(tx);
@@ -113,7 +112,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_multiple_messages() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut mock_sink = MockSink::new(tx);
@@ -143,7 +142,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_messages_concurrently() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mock_sink = Arc::new(Mutex::new(MockSink::new(tx)));
@@ -190,7 +189,7 @@ mod tests {
         assert_eq!(sent.len(), messages.len());
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_message_sink_disconnected() {
         let (tx, rx) = mpsc::unbounded_channel();
         drop(rx); // Drop the receiver to simulate the sink being disconnected.
@@ -210,7 +209,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_single_message() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::from(
             "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}",
@@ -227,7 +226,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_multiple_messages() {
         let mut mock_stream = MockStream::new(vec![
             Ok(ws::Message::from(
@@ -259,7 +258,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_messages_concurrently() {
         let mock_stream = Arc::new(Mutex::new(MockStream::new(vec![
             Ok(ws::Message::from(
@@ -291,7 +290,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_replayed_messages() {
         let msg = ws::Message::from("{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}");
         let mut mock_stream = MockStream::new(vec![Ok(msg.clone()), Ok(msg)]);
@@ -307,7 +306,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_control_messages() {
         let mut mock_stream = MockStream::new(vec![
             Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
@@ -322,7 +321,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_close_message() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Close(None))]);
 
@@ -332,7 +331,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_close_message_with_close_frame() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Close(Some(ws::CloseFrame {
             reason: ws::Utf8Bytes::from("goodbye"),
@@ -345,7 +344,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_mixed_messages() {
         let mut mock_stream = MockStream::new(vec![
             Ok(ws::Message::Ping(tungstenite::Bytes::from("ping"))),
@@ -367,7 +366,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_message_deserialization_error() {
         let mut mock_stream =
             MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("invalid")))]);
@@ -378,7 +377,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_message_invalid_json() {
         let mut mock_stream =
             MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("\"Logout")))]);
@@ -389,7 +388,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_unknown_message_type() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from(
             "{\"InvalidMessageType\":{\"unknown_field\":\"value\"}}",
@@ -401,7 +400,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_empty_text() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Text(ws::Utf8Bytes::from("")))]);
 
@@ -411,7 +410,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_message_abrupt_disconnect() {
         let mut mock_stream = MockStream::new(vec![Err(axum::Error::new(tungstenite::Error::Io(
             std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Abrupt disconnection"),
@@ -423,7 +422,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_unexpected_message() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::Binary(
             tungstenite::Bytes::from("binary"),
@@ -435,7 +434,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_message_socket_error() {
         let mut mock_stream = MockStream::new(vec![Err(axum::Error::new(
             tungstenite::Error::ConnectionClosed,
@@ -447,7 +446,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn receive_message_stream_end() {
         let mut mock_stream = MockStream::new(vec![]);
 

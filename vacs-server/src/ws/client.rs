@@ -1,6 +1,7 @@
+use crate::config;
 use crate::state::AppState;
 use crate::ws::application_message::handle_application_message;
-use crate::ws::message::{receive_message, send_message, MessageResult};
+use crate::ws::message::{MessageResult, receive_message, send_message};
 use crate::ws::traits::{WebSocketSink, WebSocketStream};
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -52,29 +53,33 @@ impl ClientSession {
             tracing::warn!(?err, "Failed to send initial client list");
         }
 
-        let (ws_tx, mut ws_rx) = mpsc::channel(10);
-        tokio::spawn(async move {
-            loop {
-                let message_result = receive_message(&mut websocket_rx).await;
-                match message_result {
-                    MessageResult::ApplicationMessage(message) => {
-                        tracing::trace!("Forwarding message to application");
-                        if let Err(err) = ws_tx.send(message).await {
-                            tracing::warn!(?err, "Failed to forward message to application");
+        let (ws_tx, mut ws_rx) = mpsc::channel(config::CLIENT_WEBSOCKET_RECEIVE_CHANNEL_CAPACITY);
+        let websocket_receive_task = tokio::spawn(
+            async move {
+                loop {
+                    let message_result = receive_message(&mut websocket_rx).await;
+                    match message_result {
+                        MessageResult::ApplicationMessage(message) => {
+                            tracing::trace!("Forwarding message to application");
+                            if let Err(err) = ws_tx.send(message).await {
+                                tracing::warn!(?err, "Failed to forward message to application");
+                            }
+                        }
+                        MessageResult::ControlMessage => continue,
+                        MessageResult::Disconnected => {
+                            tracing::debug!("Client disconnected");
+                            break;
+                        }
+                        MessageResult::Error(err) => {
+                            tracing::warn!(?err, "Error while receiving message from client");
+                            break;
                         }
                     }
-                    MessageResult::ControlMessage => continue,
-                    MessageResult::Disconnected => {
-                        tracing::debug!("Client disconnected");
-                        break;
-                    }
-                    MessageResult::Error(err) => {
-                        tracing::warn!(?err, "Error while receiving message from client");
-                        break;
-                    }
                 }
+                tracing::trace!("Finished receiving messages from client");
             }
-        }.instrument(tracing::Span::current()));
+            .instrument(tracing::Span::current()),
+        );
 
         loop {
             tokio::select! {
@@ -134,6 +139,8 @@ impl ClientSession {
             }
         }
 
+        websocket_receive_task.abort();
+
         tracing::debug!("Finished handling client interaction");
     }
 }
@@ -145,9 +152,10 @@ mod tests {
     use axum::extract::ws;
     use axum::extract::ws::Utf8Bytes;
     use pretty_assertions::assert_eq;
+    use test_log::test;
     use vacs_shared::signaling::ClientInfo;
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn new_client_session() {
         let client_info = ClientInfo {
             id: "client1".to_string(),
@@ -160,7 +168,7 @@ mod tests {
         assert_eq!(session.get_client_info(), &client_info);
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_message() {
         let client_info = ClientInfo {
             id: "client1".to_string(),
@@ -182,7 +190,7 @@ mod tests {
         assert_eq!(received, message);
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn send_message_error() {
         let client_info = ClientInfo {
             id: "client1".to_string(),
@@ -203,7 +211,7 @@ mod tests {
         assert!(result.is_err_and(|err| err.to_string().contains("Failed to send message")));
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn initial_client_list() {
         let setup = TestSetup::new();
         setup.register_client("client1").await;
@@ -227,7 +235,7 @@ mod tests {
         handle_task.await.unwrap();
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn handle_interaction() {
         let setup = TestSetup::new().with_messages(vec![Ok(ws::Message::Text(
             Utf8Bytes::from_static(r#"{"CallOffer":{"peer_id":"client2","sdp":"sdp1"}}"#),
@@ -262,7 +270,7 @@ mod tests {
         handle_task.await.unwrap();
     }
 
-    #[tokio::test]
+    #[test(tokio::test)]
     async fn handle_interaction_websocket_error() {
         let setup = TestSetup::new().with_messages(vec![Err(axum::Error::new("Test error"))]);
         let websocket_rx = setup.websocket_rx.clone();

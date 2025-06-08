@@ -1,9 +1,6 @@
 use crate::config;
 use crate::config::AppConfig;
 use crate::ws::ClientSession;
-use crate::ws::traits::WebSocketSink;
-use axum::extract::ws;
-use futures_util::SinkExt;
 use std::collections::HashMap;
 use tokio::sync::{RwLock, broadcast, mpsc, watch};
 use vacs_shared::signaling::{ClientInfo, Message};
@@ -110,29 +107,26 @@ impl AppState {
         self.clients.read().await.get(client_id).cloned()
     }
 
-    pub async fn send_message_to_peer<T: WebSocketSink>(
+    pub async fn send_message_to_peer(
         &self,
-        client_websocket_tx: &mut T,
+        client: &ClientSession,
         peer_id: &str,
         message: Message,
     ) {
         match self.get_client(peer_id).await {
             Some(peer) => {
-                tracing::trace!(peer_id, "Sending message to peer");
+                tracing::trace!(?peer_id, "Sending message to peer");
                 if let Err(err) = peer.send_message(message).await {
                     tracing::warn!(?err, "Failed to send message to peer");
                 }
             }
             None => {
                 tracing::warn!(peer_id, "Peer not found");
-                if let Err(err) = client_websocket_tx
-                    .send(ws::Message::text(format!("Peer not found: {}", peer_id)))
-                    .await
-                {
+                if let Err(err) = client.send_message(Message::PeerNotFound).await {
                     tracing::warn!(
-                        peer_id,
+                        ?peer_id,
                         ?err,
-                        "Failed to send peer not found reply to client"
+                        "Failed to send peer not found message to client"
                     );
                 }
             }

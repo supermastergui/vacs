@@ -5,11 +5,13 @@ use crate::common::{
     setup_test_clients,
 };
 use futures_util::{SinkExt, StreamExt};
+use pretty_assertions::assert_eq;
 use std::time::Duration;
+use test_log::test;
 use tokio_tungstenite::tungstenite;
 use vacs_shared::signaling;
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn login() {
     let test_app = TestApp::new().await;
 
@@ -30,7 +32,7 @@ async fn login() {
     .expect("Failed to log in second client");
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn duplicate_login() {
     let test_app = TestApp::new().await;
 
@@ -49,7 +51,7 @@ async fn duplicate_login() {
     );
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn invalid_login() {
     let test_app = TestApp::new().await;
 
@@ -60,7 +62,7 @@ async fn invalid_login() {
     );
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn unauthorized_message_before_login() {
     let test_app = TestApp::new().await;
 
@@ -86,7 +88,7 @@ async fn unauthorized_message_before_login() {
     });
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn simultaneous_login_attempts() {
     let test_app = TestApp::new().await;
 
@@ -102,7 +104,7 @@ async fn simultaneous_login_attempts() {
     );
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn login_timeout() {
     let test_app = TestApp::new().await;
 
@@ -128,7 +130,7 @@ async fn login_timeout() {
     assert!(message_result.is_none() || matches!(message_result, Some(Err(_))));
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn client_connected() {
     let test_app = TestApp::new().await;
 
@@ -159,7 +161,7 @@ async fn client_connected() {
     );
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn client_disconnected() {
     let test_app = TestApp::new().await;
 
@@ -193,7 +195,7 @@ async fn client_disconnected() {
     });
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn login_client_list() {
     let test_app = TestApp::new().await;
 
@@ -218,7 +220,7 @@ async fn login_client_list() {
     .expect("Failed to log in fourth client");
 }
 
-#[tokio::test]
+#[test(tokio::test)]
 async fn logout() {
     let test_app = TestApp::new().await;
 

@@ -28,16 +28,11 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
     let (mut websocket_tx, mut websocket_rx) = socket.split();
 
-    let client_id = match handle_login(
-        &state.config.auth,
-        &mut websocket_rx,
-        &mut websocket_tx,
-    )
-    .await
-    {
-        Some(id) => id,
-        None => return,
-    };
+    let client_id =
+        match handle_login(&state.config.auth, &mut websocket_rx, &mut websocket_tx).await {
+            Some(id) => id,
+            None => return,
+        };
 
     tracing::Span::current().record("client_id", &client_id);
 

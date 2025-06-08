@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::time::timeout;
-use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite};
 use vacs_server::app::create_app;
 use vacs_server::config::{AppConfig, AuthConfig};
 use vacs_server::state::AppState;
