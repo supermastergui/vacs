@@ -10,7 +10,7 @@ pub fn start_playback(
     device: &Device,
     mut rx: mpsc::Receiver<EncodedAudioFrame>,
 ) -> Result<cpal::Stream> {
-    log::debug!("Starting playback on device: {}", device);
+    tracing::debug!(%device, "Starting playback on device");
 
     // We buffer 10 frames, which equals a total buffer of 200 ms at 48_000 Hz and 20 ms intervals
     let output_buffer = ringbuf::HeapRb::<f32>::new(FRAME_SIZE * 10);
@@ -26,7 +26,7 @@ pub fn start_playback(
                 Ok(decoded_samples) => {
                     prod.push_slice(&decoded[..decoded_samples]);
                 }
-                Err(err) => log::error!("Failed to decode output audio frame: {}", err),
+                Err(err) => tracing::warn!(?err, "Failed to decode output audio frame"),
             }
         }
     });
@@ -50,7 +50,7 @@ pub fn start_playback(
                 }
             },
             |err| {
-                log::error!("CPAL input stream error: {}", err);
+                tracing::warn!(?err, "CPAL input stream error");
             },
             None,
         )
@@ -58,6 +58,6 @@ pub fn start_playback(
 
     stream.play().context("Failed to play output stream")?;
 
-    log::info!("CPAL output stream started");
+    tracing::info!("CPAL output stream started");
     Ok(stream)
 }

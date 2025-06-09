@@ -22,7 +22,7 @@ impl Sender {
                 tokio::select! {
                     biased;
                     _ = shutdown_rx.changed() => {
-                        log::trace!("Shutdown signalled, stopping sending");
+                        tracing::trace!("Shutdown signalled, stopping sending");
                         break;
                     }
                     frame = input_rx.recv() => {
@@ -35,7 +35,7 @@ impl Sender {
                                 };
 
                                 if let Err(err) = track.write_sample(&sample).await {
-                                    log::warn!("Failed to write sample to track: {:?}", err);
+                                    tracing::warn!(?err, "Failed to write sample to track");
                                 }
                             }
                             None => {

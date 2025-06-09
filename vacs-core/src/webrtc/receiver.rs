@@ -25,19 +25,19 @@ impl Receiver {
                         tokio::select! {
                             biased;
                             _ = shutdown_rx.changed() => {
-                                log::trace!("Shutdown signalled, stopping receiver");
+                                tracing::trace!("Shutdown signalled, stopping receiver");
                                 break;
                             }
                             rtp = track.read_rtp() => {
                                 match rtp {
                                     Ok((packet, _)) => {
                                         if output_tx.send(packet.payload).await.is_err() {
-                                            log::warn!("Failed to send received RTP packet to output");
+                                            tracing::warn!("Failed to send received RTP packet to output");
                                             break;
                                         }
                                     }
                                     Err(err) => {
-                                        log::warn!("Failed to read RTP packet: {}", err);
+                                        tracing::warn!(?err, "Failed to read RTP packet");
                                         break;
                                     }
                                 }

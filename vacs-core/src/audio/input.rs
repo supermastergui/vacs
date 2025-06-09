@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 const MAX_OPUS_FRAME_SIZE: usize = 1275;
 
 pub fn start_capture(device: &Device, tx: mpsc::Sender<EncodedAudioFrame>) -> Result<cpal::Stream> {
-    log::debug!("Starting capture on device: {}", device);
+    tracing::debug!(%device, "Starting capture on device");
 
     let mut input_buffer = Vec::<f32>::new();
 
@@ -32,15 +32,15 @@ pub fn start_capture(device: &Device, tx: mpsc::Sender<EncodedAudioFrame>) -> Re
                         Ok(len) => {
                             let audio_frame = Bytes::copy_from_slice(&encoded[..len]);
                             if let Err(err) = tx.try_send(audio_frame) {
-                                log::warn!("Failed to send input audio sample: {}", err);
+                                tracing::warn!(?err, "Failed to send input audio sample");
                             }
                         }
-                        Err(err) => log::error!("Failed to encode input audio frame: {}", err),
+                        Err(err) => tracing::warn!(?err, "Failed to encode input audio frame"),
                     }
                 }
             },
             |err| {
-                log::error!("CPAL input stream error: {}", err);
+                tracing::warn!(?err, "CPAL input stream error");
             },
             None,
         )
@@ -48,7 +48,6 @@ pub fn start_capture(device: &Device, tx: mpsc::Sender<EncodedAudioFrame>) -> Re
 
     stream.play().context("Failed to play input stream")?;
 
-    log::info!("CPAL input stream started");
-
+    tracing::info!("CPAL input stream started");
     Ok(stream)
 }

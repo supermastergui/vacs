@@ -72,8 +72,8 @@ impl Peer {
 
         // todo: rework to work with channel to communicate with control
         peer_connection.on_peer_connection_state_change(Box::new(
-            move |s: RTCPeerConnectionState| {
-                println!("Peer connection state changed: {}", s);
+            move |state: RTCPeerConnectionState| {
+                tracing::trace!(?state, "Peer connection state changed");
 
                 Box::pin(async {})
             },
@@ -99,7 +99,7 @@ impl Peer {
     }
 
     pub async fn create_offer(&self) -> Result<RTCSessionDescription> {
-        log::trace!("Creating sdp offer");
+        tracing::trace!("Creating SDP offer");
 
         let offer = self
             .peer_connection
@@ -121,7 +121,7 @@ impl Peer {
             .await
             .context("Failed to get local description for offer")?;
 
-        log::trace!("Created sdp offer");
+        tracing::trace!("Created SDP offer");
         Ok(updated_offer)
     }
 
@@ -129,7 +129,7 @@ impl Peer {
         &self,
         offer: RTCSessionDescription,
     ) -> Result<RTCSessionDescription> {
-        log::trace!("Creating sdp answer");
+        tracing::trace!("Creating SDP answer");
 
         self.peer_connection
             .set_remote_description(offer)
@@ -150,19 +150,19 @@ impl Peer {
             .await
             .context("Failed to get local description for answer")?;
 
-        log::trace!("Created sdp answer");
+        tracing::trace!("Created SDP answer");
         Ok(answer)
     }
 
     pub async fn accept_answer(&self, answer: RTCSessionDescription) -> Result<()> {
-        log::trace!("Accepting sdp answer");
+        tracing::trace!("Accepting SDP answer");
 
         self.peer_connection
             .set_remote_description(answer)
             .await
             .context("Failed to set answer as remote description")?;
 
-        log::trace!("Accepted sdp answer");
+        tracing::trace!("Accepted SDP answer");
         Ok(())
     }
 
@@ -171,12 +171,14 @@ impl Peer {
 
         self.peer_connection
             .on_ice_gathering_state_change(Box::new(move |state| {
-                log::trace!("ICE gathering state changed: {:?}", state);
+                tracing::trace!(?state, "ICE gathering state changed");
                 if state == webrtc::ice_transport::ice_gatherer_state::RTCIceGathererState::Complete
                 {
                     match gather_complete_tx.try_send(()) {
                         Ok(()) => {}
-                        Err(err) => log::error!("Failed to send gather complete event: {:?}", err),
+                        Err(err) => {
+                            tracing::warn!(?err, "Failed to send gather complete event")
+                        }
                     }
                 }
 

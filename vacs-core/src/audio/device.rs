@@ -42,7 +42,7 @@ impl Display for Device {
 
 impl Device {
     pub fn new(config: &AudioDeviceConfig, device_type: DeviceType) -> anyhow::Result<Self> {
-        log::trace!("Initialising device");
+        tracing::trace!("Initialising device");
 
         let host = find_host(&config.host_name)?;
         let device = find_device(&host, &config.device_name, &device_type)?;
@@ -53,13 +53,13 @@ impl Device {
             stream_config,
         };
 
-        log::debug!("Device initialised: {}", device);
+        tracing::debug!(%device, "Device initialised");
         Ok(device)
     }
 }
 
 fn find_host(host_name: &Option<String>) -> anyhow::Result<cpal::Host> {
-    log::trace!("Trying to find audio host {:?}", host_name);
+    tracing::trace!(?host_name, "Trying to find audio host");
 
     let host_id = match host_name {
         Some(host_name) => {
@@ -92,7 +92,7 @@ fn find_device(
     device_name: &Option<String>,
     device_type: &DeviceType,
 ) -> anyhow::Result<cpal::Device> {
-    log::trace!("Trying to find {} device {:?}", device_type, device_name);
+    tracing::trace!(?device_type, ?device_name, "Trying to find device");
 
     match device_name {
         Some(device_name) => {
@@ -160,10 +160,10 @@ fn find_supported_stream_config(
     config: &AudioDeviceConfig,
     device_type: &DeviceType,
 ) -> anyhow::Result<SupportedStreamConfig> {
-    log::trace!(
-        "Trying to find supported {} stream config {:?}",
-        device_type,
-        config
+    tracing::trace!(
+        ?device_type,
+        ?config,
+        "Trying to find supported stream config"
     );
 
     let mut configs: Box<dyn Iterator<Item = SupportedStreamConfigRange>> = match device_type {

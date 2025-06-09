@@ -3,20 +3,20 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use clap::Parser;
 use config::{Config, Environment, File};
-use log::LevelFilter;
 use std::io;
 use tokio::sync::{mpsc, watch};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use vacs_core::audio;
-use vacs_core::config::LoggingConfig;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_logger();
     let _cli = parse_args();
     let config = load_config()?;
-    init_logger(&config.logging);
 
-    log::trace!("Parsed config: {:?}", config);
+    tracing::trace!(?config, "Parsed config");
 
     let input_device = audio::Device::new(&config.audio.input, audio::DeviceType::Input)?;
     let output_device = audio::Device::new(&config.audio.output, audio::DeviceType::Output)?;
@@ -67,10 +67,10 @@ async fn main() -> Result<()> {
 
     tokio::select! {
         _ = done_rx.changed() => {
-            log::info!("Received done signal, exiting");
+            tracing::info!("Received done signal, exiting");
         },
         _ = tokio::signal::ctrl_c() => {
-            log::info!("Received ctrl-c, exiting");
+            tracing::info!("Received ctrl-c, exiting");
         }
     }
 
@@ -101,7 +101,6 @@ fn load_config() -> Result<vacs_core::config::AppConfig> {
         .set_default("api.url", "http://localhost:8080")?
         .set_default("api.key", "supersikrit")?
         .set_default("webrtc.ice_servers", vec!["stun:stun.l.google.com:19302"])?
-        .set_default("logging.level", LevelFilter::max().as_str())?
         .set_default("audio.input.channels", 1)?
         .set_default("audio.output.channels", 2)?
         // Config files overriding defaults
@@ -126,9 +125,13 @@ fn load_config() -> Result<vacs_core::config::AppConfig> {
         .context("Failed to deserialize config")
 }
 
-fn init_logger(config: &LoggingConfig) {
-    env_logger::builder()
-        .filter_level(LevelFilter::Off) // disable logging of all other crates
-        .filter_module("vacs_core", config.level)
+fn init_logger() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=trace,vacs-core=trace", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
         .init();
 }

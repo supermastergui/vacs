@@ -1,13 +1,13 @@
-use log::LevelFilter;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[allow(unused)]
 pub struct AppConfig {
     pub api: ApiConfig,
+    #[cfg(feature = "audio")]
     pub audio: AudioConfig,
+    #[cfg(feature = "webrtc")]
     pub webrtc: WebrtcConfig,
-    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -17,6 +17,7 @@ pub struct ApiConfig {
     pub key: String,
 }
 
+#[cfg(feature = "audio")]
 #[derive(Debug, Deserialize)]
 #[allow(unused)]
 pub struct AudioConfig {
@@ -24,6 +25,7 @@ pub struct AudioConfig {
     pub output: AudioDeviceConfig,
 }
 
+#[cfg(feature = "audio")]
 #[derive(Debug, Deserialize)]
 #[allow(unused)]
 pub struct AudioDeviceConfig {
@@ -32,14 +34,9 @@ pub struct AudioDeviceConfig {
     pub channels: u16,
 }
 
+#[cfg(feature = "webrtc")]
 #[derive(Debug, Deserialize)]
 #[allow(unused)]
 pub struct WebrtcConfig {
     pub ice_servers: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(unused)]
-pub struct LoggingConfig {
-    pub level: LevelFilter,
 }

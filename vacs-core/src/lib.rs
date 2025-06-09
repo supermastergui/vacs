@@ -1,6 +1,6 @@
 #[cfg(feature = "audio")]
 pub mod audio;
-#[cfg(feature = "config")]
+#[cfg(any(feature = "audio", feature = "webrtc"))]
 pub mod config;
 #[cfg(feature = "signaling")]
 pub mod signaling;

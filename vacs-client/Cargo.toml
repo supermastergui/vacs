@@ -13,15 +13,15 @@ vacs-core = { path = "../vacs-core", features = ["client"] }
 anyhow = "1.0.98"
 base64 = "0.22.1"
 clap = { version = "4.5.39", features = ["derive"] }
-log = { workspace = true }
 tokio = { workspace = true }
-env_logger = "0.11.8"
 config = { workspace = true }
 webrtc = "0.13.0"
 directories = { workspace = true }
 futures-util = "0.3.31"
 tokio-tungstenite = "0.26.2"
 tungstenite = "0.26.2"
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true
