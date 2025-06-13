@@ -44,7 +44,7 @@ pub async fn handle_login(
                 MessageResult::ApplicationMessage(message) => {
                     tracing::debug!(msg = ?message, "Received unexpected message during login flow");
                     let login_failure_message = signaling::Message::LoginFailure {
-                        reason: signaling::LoginFailureReason::InvalidLoginFlow,
+                        reason: signaling::LoginFailureReason::Unauthorized,
                     };
                     if let Err(err) = send_message(websocket_sender, login_failure_message).await {
                         tracing::warn!(?err, "Failed to send login failure message");

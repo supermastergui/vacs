@@ -42,7 +42,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             if let Err(err) = send_message(
                 &mut websocket_tx,
                 Message::LoginFailure {
-                    reason: LoginFailureReason::IdTaken,
+                    reason: LoginFailureReason::DuplicateId,
                 },
             )
             .await

@@ -217,7 +217,7 @@ mod tests {
             &setup.session,
             &mut setup.mock_sink,
             Message::LoginFailure {
-                reason: LoginFailureReason::IdTaken,
+                reason: LoginFailureReason::DuplicateId,
             },
         )
         .await;

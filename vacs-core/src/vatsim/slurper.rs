@@ -325,6 +325,19 @@ mod tests {
     }
 
     #[test(tokio::test)]
+    async fn get_station_name_empty_cid() -> anyhow::Result<()> {
+        let client = SlurperClient::new("http://localhost").context("Failed to create client")?;
+
+        let station_name = client
+            .get_station_name("")
+            .await
+            .context("Failed to get station name")?;
+
+        assert_eq!(station_name, None);
+        Ok(())
+    }
+
+    #[test(tokio::test)]
     async fn get_station_name_non_200_status_code() -> anyhow::Result<()> {
         let server = MockServer::start().await;
         Mock::given(method("GET"))

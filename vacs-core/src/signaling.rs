@@ -1,14 +1,34 @@
+#[cfg(feature = "signaling-client")]
+pub mod client;
+#[cfg(feature = "signaling-client")]
+pub mod error;
+#[cfg(feature = "signaling-client")]
+pub mod transport;
+
 use serde::{Deserialize, Serialize};
 
 /// Possible reasons for a login failure.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum LoginFailureReason {
-    /// The client's ID is already in use.
-    IdTaken,
+    /// The client has not authenticated properly yet, the login flow must be performed before sending any other messages.
+    Unauthorized,
+    /// The provided credentials are already in use.
+    DuplicateId,
     /// The provided credentials are invalid.
     InvalidCredentials,
-    /// The login flow/initial handshake was performed incorrectly.
-    InvalidLoginFlow,
+}
+
+/// Possible reasons for a client or server error.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum ErrorReason {
+    /// The message was malformed and could not be parsed.
+    MalformedMessage,
+    /// The message was processed successfully, but an internal error occurred.
+    Internal(String),
+    /// The message was processed successfully, but an error communicating with the selected peer occurred.
+    PeerConnection,
+    /// The client or server encountered an unexpected message.
+    UnexpectedMessage(String),
 }
 
 /// Represents the current or updated status of a client as observed by the signaling server.
@@ -135,8 +155,8 @@ pub enum Message {
     /// Generic error message sent by either a client or the signaling server.
     /// This could indicate an error processing the last received message or signals a failure with the last request.
     Error {
-        /// Message describing the error.
-        message: String,
+        /// Reason for the error.
+        reason: ErrorReason,
         /// Optional ID of the peer that caused the error.
         peer_id: Option<String>,
     },
@@ -159,6 +179,7 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_serialize_deserialize_login() {
@@ -186,16 +207,19 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_login_failure() {
         let message = Message::LoginFailure {
-            reason: LoginFailureReason::IdTaken,
+            reason: LoginFailureReason::DuplicateId,
         };
 
         let serialized = Message::serialize(&message).unwrap();
-        assert_eq!(serialized, "{\"LoginFailure\":{\"reason\":\"IdTaken\"}}");
+        assert_eq!(
+            serialized,
+            "{\"LoginFailure\":{\"reason\":\"DuplicateId\"}}"
+        );
 
         let deserialized = Message::deserialize(&serialized).unwrap();
         match deserialized {
             Message::LoginFailure { reason } => {
-                assert_eq!(reason, LoginFailureReason::IdTaken);
+                assert_eq!(reason, LoginFailureReason::DuplicateId);
             }
             _ => panic!("Expected LoginFailure message"),
         }
@@ -406,20 +430,20 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_error() {
         let message = Message::Error {
-            message: "error1".to_string(),
+            reason: ErrorReason::MalformedMessage,
             peer_id: None,
         };
 
         let serialized = Message::serialize(&message).unwrap();
         assert_eq!(
             serialized,
-            "{\"Error\":{\"message\":\"error1\",\"peer_id\":null}}"
+            "{\"Error\":{\"reason\":\"MalformedMessage\",\"peer_id\":null}}"
         );
 
         let deserialized = Message::deserialize(&serialized).unwrap();
         match deserialized {
-            Message::Error { message, peer_id } => {
-                assert_eq!(message, "error1");
+            Message::Error { reason, peer_id } => {
+                assert_eq!(reason, ErrorReason::MalformedMessage);
                 assert!(peer_id.is_none());
             }
             _ => panic!("Expected Error message"),
@@ -429,20 +453,20 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_error_with_peer_id() {
         let message = Message::Error {
-            message: "error1".to_string(),
+            reason: ErrorReason::UnexpectedMessage("error1".to_string()),
             peer_id: Some("client1".to_string()),
         };
 
         let serialized = Message::serialize(&message).unwrap();
         assert_eq!(
             serialized,
-            "{\"Error\":{\"message\":\"error1\",\"peer_id\":\"client1\"}}"
+            "{\"Error\":{\"reason\":{\"UnexpectedMessage\":\"error1\"},\"peer_id\":\"client1\"}}"
         );
 
         let deserialized = Message::deserialize(&serialized).unwrap();
         match deserialized {
-            Message::Error { message, peer_id } => {
-                assert_eq!(message, "error1");
+            Message::Error { reason, peer_id } => {
+                assert_eq!(reason, ErrorReason::UnexpectedMessage("error1".to_string()));
                 assert_eq!(peer_id, Some("client1".to_string()));
             }
             _ => panic!("Expected Error message"),

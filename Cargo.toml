@@ -11,12 +11,14 @@ publish = false
 serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.45.1", features = ["rt", "rt-multi-thread", "macros", "signal"] }
 anyhow = "1.0.98"
-tokio-tungstenite = "0.26.2"
+tokio-tungstenite = { version = "0.26.2", features = ["native-tls"] }
 config = "0.15.11"
 directories = "6.0.0"
 pretty_assertions = "1.4.1"
 test-log = { version = "0.2.17", features = ["trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+futures-util = "0.3.31"
+thiserror = "2.0.12"
 
 [workspace.lints]

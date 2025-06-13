@@ -3,7 +3,7 @@ use crate::config::AppConfig;
 use crate::ws::ClientSession;
 use std::collections::HashMap;
 use tokio::sync::{RwLock, broadcast, mpsc, watch};
-use vacs_core::signaling::{ClientInfo, Message};
+use vacs_core::signaling::{ClientInfo, ErrorReason, Message};
 
 pub struct AppState {
     pub config: AppConfig,
@@ -120,7 +120,7 @@ impl AppState {
                     tracing::warn!(?err, "Failed to send message to peer");
                     if let Err(e) = client
                         .send_message(Message::Error {
-                            message: "Failed to send message to peer".to_string(),
+                            reason: ErrorReason::PeerConnection,
                             peer_id: Some(peer_id.to_string()),
                         })
                         .await

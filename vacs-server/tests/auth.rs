@@ -47,7 +47,7 @@ async fn duplicate_login() {
     assert!(
         TestClient::new(test_app.addr(), "client1", "token1", |_| {})
             .await
-            .is_err_and(|err| { err.to_string() == "Login failed: IdTaken" })
+            .is_err_and(|err| { err.to_string() == "Login failed: DuplicateId" })
     );
 }
 
@@ -80,7 +80,7 @@ async fn unauthorized_message_before_login() {
         signaling::Message::LoginFailure { reason } => {
             assert_eq!(
                 reason,
-                signaling::LoginFailureReason::InvalidLoginFlow,
+                signaling::LoginFailureReason::Unauthorized,
                 "Unexpected reason for LoginFailure"
             );
         }
