@@ -1,6 +1,14 @@
 [workspace]
 resolver = "3"
-members = ["vacs-audio", "vacs-client", "vacs-protocol", "vacs-server", "vacs-signaling", "vacs-vatsim", "vacs-webrtc"]
+members = [
+    "vacs-audio",
+    "vacs-client",
+    "vacs-protocol",
+    "vacs-server",
+    "vacs-signaling",
+    "vacs-vatsim",
+    "vacs-webrtc"
+]
 
 [workspace.package]
 version = "0.0.0"
@@ -35,6 +43,7 @@ tracing = "0.1.41"
 tungstenite = "0.27.0"
 vacs-audio = { path = "vacs-audio" }
 vacs-protocol = { path = "vacs-protocol" }
+vacs-server = { path = "vacs-server" }
 vacs-signaling = { path = "vacs-signaling" }
 vacs-webrtc = { path = "vacs-webrtc" }
 webrtc = "0.13.0"

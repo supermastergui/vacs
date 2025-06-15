@@ -1,9 +1,7 @@
-mod common;
-
-use crate::common::{TestApp, setup_n_test_clients};
 use std::time::Duration;
 use test_log::test;
 use vacs_protocol::SignalingMessage;
+use vacs_server::test_utils::{setup_n_test_clients, TestApp};
 
 #[test(tokio::test)]
 async fn call_offer() -> anyhow::Result<()> {
@@ -15,13 +13,13 @@ async fn call_offer() -> anyhow::Result<()> {
 
     client1
         .send(SignalingMessage::CallOffer {
-            peer_id: client2.id.clone(),
+            peer_id: client2.id().to_string(),
             sdp: "sdp1".to_string(),
         })
         .await?;
 
     let call_offer_messages = client2
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallOffer { .. })
         })
         .await;
@@ -34,7 +32,7 @@ async fn call_offer() -> anyhow::Result<()> {
 
     match &call_offer_messages[0] {
         SignalingMessage::CallOffer { peer_id, sdp } => {
-            assert_eq!(peer_id, &client1.id, "CallOffer targeted the wrong client");
+            assert_eq!(peer_id, &client1.id(), "CallOffer targeted the wrong client");
             assert_eq!(sdp, "sdp1", "CallOffer contains the wrong SDP");
         }
         message => panic!(
@@ -45,7 +43,7 @@ async fn call_offer() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let call_offer_messages = client
-            .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+            .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
                 matches!(m, SignalingMessage::CallOffer { .. })
             })
             .await;
@@ -59,7 +57,7 @@ async fn call_offer() -> anyhow::Result<()> {
     }
 
     let call_offer_messages = client1
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallOffer { .. })
         })
         .await;
@@ -82,13 +80,13 @@ async fn call_offer_answer() -> anyhow::Result<()> {
 
     client1
         .send(SignalingMessage::CallOffer {
-            peer_id: client2.id.clone(),
+            peer_id: client2.id().to_string(),
             sdp: "sdp1".to_string(),
         })
         .await?;
 
     let call_offer_messages = client2
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallOffer { .. })
         })
         .await;
@@ -101,7 +99,7 @@ async fn call_offer_answer() -> anyhow::Result<()> {
 
     match &call_offer_messages[0] {
         SignalingMessage::CallOffer { peer_id, sdp } => {
-            assert_eq!(peer_id, &client1.id, "CallOffer targeted the wrong client");
+            assert_eq!(peer_id, &client1.id(), "CallOffer targeted the wrong client");
             assert_eq!(sdp, "sdp1", "CallOffer contains the wrong SDP");
         }
         message => panic!(
@@ -112,13 +110,13 @@ async fn call_offer_answer() -> anyhow::Result<()> {
 
     client2
         .send(SignalingMessage::CallAnswer {
-            peer_id: client1.id.clone(),
+            peer_id: client1.id().to_string(),
             sdp: "sdp2".to_string(),
         })
         .await?;
 
     let call_answer_messages = client1
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallAnswer { .. })
         })
         .await;
@@ -131,7 +129,7 @@ async fn call_offer_answer() -> anyhow::Result<()> {
 
     match &call_answer_messages[0] {
         SignalingMessage::CallAnswer { peer_id, sdp } => {
-            assert_eq!(peer_id, &client2.id, "CallAnswer targeted the wrong client");
+            assert_eq!(peer_id, &client2.id(), "CallAnswer targeted the wrong client");
             assert_eq!(sdp, "sdp2", "CallAnswer contains the wrong SDP");
         }
         message => panic!(
@@ -142,7 +140,7 @@ async fn call_offer_answer() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let messages = client
-            .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+            .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
                 matches!(
                     m,
                     SignalingMessage::CallOffer { .. } | SignalingMessage::CallAnswer { .. }
@@ -159,7 +157,7 @@ async fn call_offer_answer() -> anyhow::Result<()> {
     }
 
     let call_offer_messages = client1
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallOffer { .. })
         })
         .await;
@@ -170,7 +168,7 @@ async fn call_offer_answer() -> anyhow::Result<()> {
     );
 
     let call_answer_messages = client2
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallAnswer { .. })
         })
         .await;
@@ -199,7 +197,7 @@ async fn peer_not_found() -> anyhow::Result<()> {
         .await?;
 
     let call_offer_messages = client2
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::CallOffer { .. })
         })
         .await;
@@ -211,7 +209,7 @@ async fn peer_not_found() -> anyhow::Result<()> {
     );
 
     let peer_not_found_messages = client1
-        .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+        .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
             matches!(m, SignalingMessage::PeerNotFound { .. })
         })
         .await;
@@ -237,7 +235,7 @@ async fn peer_not_found() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let call_offer_messages = client
-            .receive_until_timeout_with_filter(Duration::from_millis(100), |m| {
+            .recv_until_timeout_with_filter(Duration::from_millis(100), |m| {
                 matches!(
                     m,
                     SignalingMessage::CallOffer { .. } | SignalingMessage::PeerNotFound { .. }

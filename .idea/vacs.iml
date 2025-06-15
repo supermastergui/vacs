@@ -7,12 +7,12 @@
       <sourceFolder url="file://$MODULE_DIR$/vacs-server/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-server/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-shared/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/vacs-core/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-audio/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-protocol/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-signaling/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-vatsim/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/vacs-webrtc/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/vacs-signaling/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

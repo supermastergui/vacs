@@ -1,12 +1,10 @@
-mod common;
-
-use crate::common::{TestApp, TestClient, setup_n_test_clients};
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use test_log::test;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::Bytes;
 use vacs_protocol::SignalingMessage;
+use vacs_server::test_utils::{setup_n_test_clients, TestApp, TestClient};
 
 #[test(tokio::test)]
 async fn client_connected() -> anyhow::Result<()> {
@@ -16,7 +14,7 @@ async fn client_connected() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let messages = client
-            .receive_until_timeout(Duration::from_millis(100))
+            .recv_until_timeout(Duration::from_millis(100))
             .await;
 
         let expected_message_count = client_count - i - 1;
@@ -63,7 +61,7 @@ async fn client_disconnected() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let messages = client
-            .receive_until_timeout(Duration::from_millis(100))
+            .recv_until_timeout(Duration::from_millis(100))
             .await;
 
         let expected_message_count = if i == initial_client_count - 1 {
@@ -120,7 +118,7 @@ async fn client_dropped() -> anyhow::Result<()> {
 
     for (i, client) in clients.iter_mut().enumerate() {
         let messages = client
-            .receive_until_timeout(Duration::from_millis(100))
+            .recv_until_timeout(Duration::from_millis(100))
             .await;
 
         let expected_message_count = initial_client_count - i;
@@ -166,7 +164,7 @@ async fn client_dropped() -> anyhow::Result<()> {
 #[test(tokio::test)]
 async fn control_messages() -> anyhow::Result<()> {
     let test_app = TestApp::new().await;
-    let mut client = TestClient::new(test_app.addr(), "client1", "token1", |_| {})
+    let mut client = TestClient::new_with_login(test_app.addr(), "client1", "token1", |_| Ok(()))
         .await
         .expect("Failed to create client");
 

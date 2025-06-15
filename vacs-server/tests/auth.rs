@@ -1,32 +1,29 @@
-mod common;
-
-use crate::common::{
-    TestApp, TestClient, assert_message_matches, assert_raw_message_matches, connect_to_websocket,
-    setup_test_clients,
-};
 use futures_util::{SinkExt, StreamExt};
 use pretty_assertions::assert_eq;
 use std::time::Duration;
 use test_log::test;
 use tokio_tungstenite::tungstenite;
 use vacs_protocol::{LoginFailureReason, SignalingMessage};
+use vacs_server::test_utils::{assert_message_matches, assert_raw_message_matches, connect_to_websocket, setup_test_clients, TestApp, TestClient};
 
 #[test(tokio::test)]
 async fn login() {
     let test_app = TestApp::new().await;
 
-    let _client1 = TestClient::new(test_app.addr(), "client1", "token1", |clients| {
+    let _client1 = TestClient::new_with_login(test_app.addr(), "client1", "token1", |clients| {
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0].id, "client1");
         assert_eq!(clients[0].display_name, "client1");
+        Ok(())
     })
     .await
     .expect("Failed to log in first client");
 
-    let _client2 = TestClient::new(test_app.addr(), "client2", "token2", |clients| {
+    let _client2 = TestClient::new_with_login(test_app.addr(), "client2", "token2", |clients| {
         assert_eq!(clients.len(), 2);
         assert!(clients.iter().any(|client| client.id == "client1"));
         assert!(clients.iter().any(|client| client.id == "client2"));
+        Ok(())
     })
     .await
     .expect("Failed to log in second client");
@@ -36,16 +33,17 @@ async fn login() {
 async fn duplicate_login() {
     let test_app = TestApp::new().await;
 
-    let _client1 = TestClient::new(test_app.addr(), "client1", "token1", |clients| {
+    let _client1 = TestClient::new_with_login(test_app.addr(), "client1", "token1", |clients| {
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0].id, "client1");
         assert_eq!(clients[0].display_name, "client1");
+        Ok(())
     })
     .await
     .expect("Failed to log in first client");
 
     assert!(
-        TestClient::new(test_app.addr(), "client1", "token1", |_| {})
+        TestClient::new_with_login(test_app.addr(), "client1", "token1", |_| Ok(()))
             .await
             .is_err_and(|err| { err.to_string() == "Login failed: DuplicateId" })
     );
@@ -56,7 +54,7 @@ async fn invalid_login() {
     let test_app = TestApp::new().await;
 
     assert!(
-        TestClient::new(test_app.addr(), "client1", "", |_| {})
+        TestClient::new_with_login(test_app.addr(), "client1", "", |_| Ok(()))
             .await
             .is_err_and(|err| { err.to_string() == "Login failed: InvalidCredentials" })
     );
@@ -92,8 +90,8 @@ async fn unauthorized_message_before_login() {
 async fn simultaneous_login_attempts() {
     let test_app = TestApp::new().await;
 
-    let attempt1 = TestClient::new(test_app.addr(), "client1", "token1", |_| {});
-    let attempt2 = TestClient::new(test_app.addr(), "client1", "token1", |_| {});
+    let attempt1 = TestClient::new_with_login(test_app.addr(), "client1", "token1", |_| Ok(()));
+    let attempt2 = TestClient::new_with_login(test_app.addr(), "client1", "token1", |_| Ok(()));
 
     let (attempt1_result, attempt2_result) = tokio::join!(attempt1, attempt2);
 
@@ -111,7 +109,7 @@ async fn login_timeout() {
     let mut ws_stream = connect_to_websocket(test_app.addr()).await;
 
     tokio::time::sleep(Duration::from_millis(
-        test_app.state.config.auth.login_flow_timeout_millis,
+        test_app.state().config.auth.login_flow_timeout_millis,
     ))
     .await;
 
@@ -142,7 +140,7 @@ async fn client_connected() {
 
     let client1 = clients.get_mut("client1").unwrap();
     let client_connected = client1
-        .receive_with_timeout(Duration::from_millis(100))
+        .recv_with_timeout(Duration::from_millis(100))
         .await;
     assert_message_matches(client_connected, |message| match message {
         SignalingMessage::ClientConnected { client } => {
@@ -155,7 +153,7 @@ async fn client_connected() {
     let client2 = clients.get_mut("client2").unwrap();
     assert!(
         client2
-            .receive_with_timeout(Duration::from_millis(100))
+            .recv_with_timeout(Duration::from_millis(100))
             .await
             .is_none()
     );
@@ -173,7 +171,7 @@ async fn client_disconnected() {
 
     let client1 = clients.get_mut("client1").unwrap();
     let client_connected = client1
-        .receive_with_timeout(Duration::from_millis(100))
+        .recv_with_timeout(Duration::from_millis(100))
         .await;
     assert_message_matches(client_connected, |message| match message {
         SignalingMessage::ClientConnected { client } => {
@@ -187,7 +185,7 @@ async fn client_disconnected() {
 
     let client2 = clients.get_mut("client2").unwrap();
     let client_disconnected = client2
-        .receive_with_timeout(Duration::from_millis(100))
+        .recv_with_timeout(Duration::from_millis(100))
         .await;
     assert_message_matches(client_disconnected, |message| match message {
         SignalingMessage::ClientDisconnected { id } => assert_eq!(id, "client1"),
@@ -209,12 +207,13 @@ async fn login_client_list() {
     )
     .await;
 
-    let _client4 = TestClient::new(test_app.addr(), "client4", "token4", |clients| {
+    let _client4 = TestClient::new_with_login(test_app.addr(), "client4", "token4", |clients| {
         assert_eq!(clients.len(), 4);
         assert!(clients.iter().any(|client| client.id == "client1"));
         assert!(clients.iter().any(|client| client.id == "client2"));
         assert!(clients.iter().any(|client| client.id == "client3"));
         assert!(clients.iter().any(|client| client.id == "client4"));
+        Ok(())
     })
     .await
     .expect("Failed to log in fourth client");
@@ -232,7 +231,7 @@ async fn logout() {
 
     let client1 = clients.get_mut("client1").unwrap();
     let client_connected = client1
-        .receive_with_timeout(Duration::from_millis(100))
+        .recv_with_timeout(Duration::from_millis(100))
         .await;
     assert_message_matches(client_connected, |message| match message {
         SignalingMessage::ClientConnected { client } => {
@@ -245,14 +244,14 @@ async fn logout() {
     client1.send(SignalingMessage::Logout).await.unwrap();
     assert!(
         client1
-            .receive_with_timeout(Duration::from_millis(100))
+            .recv_with_timeout(Duration::from_millis(100))
             .await
             .is_none()
     );
 
     let client2 = clients.get_mut("client2").unwrap();
     let client_disconnected = client2
-        .receive_with_timeout(Duration::from_millis(100))
+        .recv_with_timeout(Duration::from_millis(100))
         .await;
     assert_message_matches(client_disconnected, |message| match message {
         SignalingMessage::ClientDisconnected { id } => assert_eq!(id, "client1"),

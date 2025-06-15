@@ -1,9 +1,7 @@
-mod common;
-
-use crate::common::{TestApp, connect_to_websocket};
 use futures_util::{SinkExt, StreamExt};
 use test_log::test;
 use tokio_tungstenite::tungstenite;
+use vacs_server::test_utils::{connect_to_websocket, TestApp};
 
 #[test(tokio::test)]
 async fn websocket_ping_pong() {
