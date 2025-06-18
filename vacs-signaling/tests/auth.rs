@@ -3,7 +3,7 @@ use std::time::Duration;
 use test_log::test;
 use tokio::sync::watch;
 use vacs_protocol::{ClientInfo, LoginFailureReason, SignalingMessage};
-use vacs_server::test_utils::TestApp;
+use vacs_server::test_utils::{TestApp, TestClient};
 use vacs_signaling::client;
 use vacs_signaling::error::SignalingError;
 use vacs_signaling::test_utils::TestRig;
@@ -60,7 +60,7 @@ async fn login_timeout() {
 
 #[test(tokio::test)]
 async fn login_invalid_credentials() {
-    let test_app = vacs_server::test_utils::TestApp::new().await;
+    let test_app = TestApp::new().await;
 
     let transport = transport::tokio::TokioTransport::new(test_app.addr())
         .await
@@ -181,4 +181,38 @@ async fn client_list_synchronization() {
         msg.unwrap(),
         SignalingMessage::ClientList { clients } if clients.len() == 2 && clients[0].id == "client1" && clients[1].id == "client2"
     );
+}
+
+#[test(tokio::test)]
+async fn client_connected_broadcast() {
+    let mut test_rig = TestRig::new(3).await.unwrap();
+
+    let mut client3 = TestClient::new(&test_rig.server().addr(), "client3", "token3")
+        .await
+        .unwrap();
+    client3.login(|_| Ok(())).await.unwrap();
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let clients = test_rig.clients_mut();
+    for (i, client) in clients.iter_mut().enumerate() {
+        let mut received_client_ids = vec![];
+        while let Ok(msg) = client.recv_with_timeout(Duration::from_millis(100)).await {
+            match msg {
+                SignalingMessage::ClientConnected { client } => {
+                    received_client_ids.push(client.id.clone());
+                }
+                _ => panic!("Unexpected message: {:?}", msg),
+            }
+        }
+
+        let expected_ids: Vec<_> = (i + 1..=3).map(|i| format!("client{}", i)).collect();
+        assert_eq!(
+            received_client_ids,
+            expected_ids,
+            "Client{} did not receive expected broadcasts: {:?}",
+            i + 1,
+            received_client_ids
+        );
+    }
 }
