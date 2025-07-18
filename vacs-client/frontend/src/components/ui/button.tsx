@@ -1,22 +1,55 @@
-import {ComponentChildren} from "preact";
-import {clsx} from "clsx";
+import { clsx } from "clsx";
+import { ComponentChildren } from "preact";
+
+type ButtonColor = "gray" | "cyan" | "green" | "blue" | "emerald";
 
 export type ButtonProps = {
-    className?: string;
-    children?: ComponentChildren;
-    onClick?: (event: MouseEvent) => void;
-}
+  color: ButtonColor;
+  className?: string;
+  children?: ComponentChildren;
+  onClick?: (event: MouseEvent) => void;
+  disabled?: boolean;
+};
+
+const ButtonColors: Record<ButtonColor, string> = {
+  cyan: "bg-[#92e1fe] border-t-cyan-100 border-l-cyan-100 border-r-cyan-950 border-b-cyan-950 rounded-md",
+  green: "bg-[#4b8747] border-t-green-200 border-l-green-200 border-r-green-950 border-b-green-950 rounded-md",
+  gray: "bg-gray-300 border-t-gray-100 border-l-gray-100 border-r-gray-700 border-b-gray-700 shadow-[0_0_0_1px_#364153] text-lg",
+  blue: "bg-[#5796f8] border-t-blue-300 border-l-blue-300 border-r-blue-900 border-b-blue-900 text-white rounded-md",
+  emerald: "bg-[#4b8747] border-t-green-200 border-l-green-200 border-r-green-950 border-b-green-950 rounded-md" // same background color as green, kept for separation of button types
+};
+
+const ActiveButtonColors: Record<ButtonColor, string> = {
+  cyan: "active:border-r-cyan-100 active:border-b-cyan-100 active:border-t-cyan-950 active:border-l-cyan-950",
+  green: "active:border-r-green-200 active:border-b-green-200 active:border-t-green-950 active:border-l-green-950",
+  gray: "active:border-r-gray-100 active:border-b-gray-100 active:border-t-gray-700 active:border-l-gray-700",
+  blue: "active:border-r-blue-300 active:border-b-blue-300 active:border-t-blue-900 active:border-l-blue-900",
+  emerald: "active:border-r-green-200 active:border-b-green-200 active:border-t-green-950 active:border-l-green-950"
+};
+
+export const DisabledButtonColors: Record<ButtonColor, string> = {
+  cyan: "!border-cyan-900 !border",
+  green: "!border-green-950 !border",
+  gray: "!border-gray-700 !border !shadow-none",
+  blue: "!border-blue-950 !border",
+  emerald: "!border-emerald-950 !border"
+};
 
 function Button(props: ButtonProps) {
-    return (
-        <button
-            className={clsx("leading-5 w-24 font-bold cursor-pointer",
-                props.className)}
-            onClick={props.onClick}
-        >
-            {props.children}
-        </button>
-    );
+  return (
+    <button
+      className={clsx(
+        "leading-5 w-20 cursor-pointer border-2 font-semibold",
+        ButtonColors[props.color],
+        ActiveButtonColors[props.color],
+        props.disabled && DisabledButtonColors[props.color],
+        props.className
+      )}
+      onClick={props.onClick}
+    >
+      {props.children}
+    </button>
+  );
 }
 
 export default Button;

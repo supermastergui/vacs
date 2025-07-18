@@ -1,31 +1,33 @@
-import ActionButton from "./ui/action-button.tsx";
-import {Link} from "wouter";
+import {Link, useLocation} from "wouter";
 import wrenchAndDriver from "../assets/wrench-and-driver.svg";
+import Button from "./ui/button.tsx";
 
 function TopButtonRow() {
+    const [location] = useLocation();
+
     return (
-        <div className="h-22 w-full flex flex-row gap-2 justify-between p-2 [&>button]:px-3">
-            <ActionButton>PRIO</ActionButton>
-            <ActionButton>HOLD</ActionButton>
-            <ActionButton>PICKUP</ActionButton>
-            <ActionButton className="whitespace-pre-wrap">
+        <div className="h-20 w-full flex flex-row gap-2 justify-between p-2 [&>button]:px-1 [&>button]:shrink-0">
+            <Button color="cyan">PRIO</Button>
+            <Button color="cyan">HOLD</Button>
+            <Button color="cyan">PICKUP</Button>
+            <Button color="cyan">
                 SUITE<br/>PICKUP
-            </ActionButton>
-            <ActionButton>TRANS</ActionButton>
-            <ActionButton>DIV</ActionButton>
-            <ActionButton>
+            </Button>
+            <Button color="cyan">TRANS</Button>
+            <Button color="cyan">DIV</Button>
+            <Button color="cyan">
                 PLAY<br/>BACK
-            </ActionButton>
-            <ActionButton className="text-slate-400">
+            </Button>
+            <Button color="cyan" className="text-slate-400" disabled={true}>
                 PLC<br/>LSP<br/>on/off
-            </ActionButton>
-            <ActionButton>SPLIT</ActionButton>
-            <Link to="/settings">
-                <ActionButton className="h-full flex justify-center items-center">
+            </Button>
+            <Button color="cyan">SPLIT</Button>
+            <Link to={location === "/settings" ? "/" : "/settings"}>
+                <Button color={location === "/settings" ? "blue" : "cyan"} className="h-full flex justify-center items-center">
                     <img src={wrenchAndDriver} alt="Settings" className="h-12 w-12" />
-                </ActionButton>
+                </Button>
             </Link>
-            <ActionButton className="min-w-24"></ActionButton>
+            <Button color="cyan" className="min-w-20"></Button>
         </div>
     );
 }
