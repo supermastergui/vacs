@@ -15,5 +15,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { workspace = true, features = [] }
 
 [dependencies]
+anyhow = { workspace = true }
 tauri = { workspace = true, features = [] }
 tauri-plugin-opener = { workspace = true }
+tokio = { workspace = true }
+vacs-signaling = { workspace = true }
+vacs-vatsim = { workspace = true, features = ["oauth"] }

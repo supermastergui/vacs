@@ -2,11 +2,14 @@ use crate::config;
 use crate::config::AppConfig;
 use crate::ws::ClientSession;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, watch, RwLock};
 use vacs_protocol::{ClientInfo, ErrorReason, SignalingMessage};
+use vacs_vatsim::user::UserService;
 
 pub struct AppState {
     pub config: AppConfig,
+    pub vatsim_user_service: Arc<dyn UserService>,
     /// Key: CID
     clients: RwLock<HashMap<String, ClientSession>>,
     broadcast_tx: broadcast::Sender<SignalingMessage>,
@@ -14,10 +17,15 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: AppConfig, shutdown_rx: watch::Receiver<()>) -> Self {
+    pub fn new(
+        config: AppConfig,
+        vatsim_user_service: Arc<dyn UserService>,
+        shutdown_rx: watch::Receiver<()>,
+    ) -> Self {
         let (broadcast_tx, _) = broadcast::channel(config::BROADCAST_CHANNEL_CAPACITY);
         Self {
             config,
+            vatsim_user_service,
             clients: RwLock::new(HashMap::new()),
             broadcast_tx,
             shutdown_rx,
@@ -100,14 +108,15 @@ impl AppState {
     }
 
     pub async fn list_clients(&self) -> Vec<ClientInfo> {
-        let mut clients: Vec<ClientInfo> = self.clients
+        let mut clients: Vec<ClientInfo> = self
+            .clients
             .read()
             .await
             .values()
             .cloned()
             .map(|c| c.get_client_info().clone())
             .collect();
-        
+
         clients.sort_by(|a, b| a.id.cmp(&b.id));
         clients
     }

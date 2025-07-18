@@ -116,7 +116,6 @@ async fn login_timeout() {
     ws_stream
         .send(tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
-                id: "client1".to_string(),
                 token: "token".to_string(),
             })
             .unwrap(),
@@ -141,7 +140,7 @@ async fn client_connected() {
 
     let mut clients = setup_test_clients(
         test_app.addr(),
-        &vec![("client1", "token1"), ("client2", "token2")],
+        &[("client1", "token1"), ("client2", "token2")],
     )
     .await;
 

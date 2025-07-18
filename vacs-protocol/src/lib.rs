@@ -47,15 +47,13 @@ pub struct ClientInfo {
 /// Represents a message exchanged between the signaling server and clients.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum SignalingMessage {
-    /// A login message sent by the client upon initial connection, providing its ID and auth token.
+    /// A login message sent by the client upon initial connection, providing an VATSIM access token.
     ///
     /// Upon successful login, a [`SignalingMessage::ClientList`] response will be returned, containing a list of all currently connected clients.
     ///
     /// Upon login failure (either due to the client's ID already being in use or due to an invalid auth token), a [`SignalingMessage::Error`] response will be returned.
     Login {
-        /// ID of the client, displayed to the user for call selection.
-        id: String,
-        /// Opaque token used to authenticate the client.
+        /// VATSIM access token received from OAuth2 flow, used to authenticate client and retrieve the user's CID server-side.
         token: String,
     },
     /// A login failure message sent by the signaling server after a failed login attempt.
@@ -179,20 +177,18 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_login() {
         let message = SignalingMessage::Login {
-            id: "client1".to_string(),
             token: "token1".to_string(),
         };
 
         let serialized = SignalingMessage::serialize(&message).unwrap();
         assert_eq!(
             serialized,
-            "{\"Login\":{\"id\":\"client1\",\"token\":\"token1\"}}"
+            "{\"Login\":{\"token\":\"token1\"}}"
         );
 
         let deserialized = SignalingMessage::deserialize(&serialized).unwrap();
         match deserialized {
-            SignalingMessage::Login { id, token } => {
-                assert_eq!(id, "client1");
+            SignalingMessage::Login { token } => {
                 assert_eq!(token, "token1");
             }
             _ => panic!("Expected Login message"),

@@ -6,13 +6,12 @@ pub const CLIENT_CHANNEL_CAPACITY: usize = 100;
 pub const CLIENT_WEBSOCKET_RECEIVE_CHANNEL_CAPACITY: usize = 100;
 pub const SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Debug, Deserialize, Clone)]
-#[derive(Default)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct AppConfig {
     pub server: ServerConfig,
     pub auth: AuthConfig,
+    pub vatsim: VatsimConfig,
 }
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -36,6 +35,24 @@ impl Default for AuthConfig {
     fn default() -> Self {
         Self {
             login_flow_timeout_millis: 10000,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct VatsimConfig {
+    pub user_service: VatsimUserServiceConfig,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct VatsimUserServiceConfig {
+    pub user_details_endpoint_url: String,
+}
+
+impl Default for VatsimUserServiceConfig {
+    fn default() -> Self {
+        Self {
+            user_details_endpoint_url: "https://auth.vatsim.net/api/user".to_string(),
         }
     }
 }

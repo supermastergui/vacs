@@ -120,7 +120,6 @@ mod tests {
 
         let messages = vec![
             SignalingMessage::Login {
-                id: "client1".to_string(),
                 token: "token1".to_string(),
             },
             SignalingMessage::ListClients,
@@ -150,7 +149,6 @@ mod tests {
 
         let messages = vec![
             SignalingMessage::Login {
-                id: "client1".to_string(),
                 token: "token1".to_string(),
             },
             SignalingMessage::ListClients,
@@ -221,7 +219,6 @@ mod tests {
         assert_eq!(
             result,
             MessageResult::ApplicationMessage(SignalingMessage::Login {
-                id: "client1".to_string(),
                 token: "token1".to_string()
             })
         );
@@ -242,7 +239,6 @@ mod tests {
         assert_eq!(
             receive_message(&mut mock_stream).await,
             MessageResult::ApplicationMessage(SignalingMessage::Login {
-                id: "client1".to_string(),
                 token: "token1".to_string()
             })
         );
@@ -300,7 +296,6 @@ mod tests {
             assert_eq!(
                 receive_message(&mut mock_stream).await,
                 MessageResult::ApplicationMessage(SignalingMessage::Login {
-                    id: "client1".to_string(),
                     token: "token1".to_string()
                 })
             );

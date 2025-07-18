@@ -21,6 +21,7 @@ tower-http = { workspace = true, features = ["trace", "timeout"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 vacs-protocol = { workspace = true }
+vacs-vatsim = { workspace = true, features = ["user"] }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true, features = ["unstable"] }

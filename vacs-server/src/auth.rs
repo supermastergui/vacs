@@ -3,22 +3,16 @@ use crate::ws::message::{receive_message, send_message, MessageResult};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};
+use std::sync::Arc;
 use std::time::Duration;
+use tracing::instrument;
 use vacs_protocol::{LoginFailureReason, SignalingMessage};
+use vacs_vatsim::user::UserService;
 
-pub async fn verify_token(_client_id: &str, token: &str) -> anyhow::Result<()> {
-    tracing::trace!("Verifying auth token");
-
-    // TODO actual token verification
-    if token.is_empty() {
-        return Err(anyhow::anyhow!("Invalid token"));
-    }
-
-    Ok(())
-}
-
+#[instrument(level = "debug", skip_all)]
 pub async fn handle_login(
     auth_config: &AuthConfig,
+    vatsim_user_service: Arc<dyn UserService>,
     websocket_receiver: &mut SplitStream<WebSocket>,
     websocket_sender: &mut SplitSink<WebSocket, ws::Message>,
 ) -> Option<String> {
@@ -26,20 +20,25 @@ pub async fn handle_login(
     match tokio::time::timeout(Duration::from_millis(auth_config.login_flow_timeout_millis), async {
         loop {
             return match receive_message(websocket_receiver).await {
-                MessageResult::ApplicationMessage(SignalingMessage::Login { id, token }) => {
-                    if verify_token(&id, &token).await.is_err() {
-                        let login_failure_message = SignalingMessage::LoginFailure {
-                            reason: LoginFailureReason::InvalidCredentials,
-                        };
-                        if let Err(err) =
-                            send_message(websocket_sender, login_failure_message).await
-                        {
-                            tracing::warn!(?err, "Failed to send login failure message");
+                MessageResult::ApplicationMessage(SignalingMessage::Login { token }) => {
+                    match vatsim_user_service.get_cid(&token).await {
+                        Ok(cid) => {
+                            tracing::trace!(?cid, "Login flow completed");
+                            Some(cid)
+                        },
+                        Err(err) => {
+                            tracing::debug!(?err, "Login flow failed");
+                            let login_failure_message = SignalingMessage::LoginFailure {
+                                reason: LoginFailureReason::InvalidCredentials,
+                            };
+                            if let Err(err) =
+                                send_message(websocket_sender, login_failure_message).await
+                            {
+                                tracing::warn!(?err, "Failed to send login failure message");
+                            }
+                            None
                         }
-                        return None;
                     }
-                    tracing::trace!("Login flow completed");
-                    Some(id)
                 }
                 MessageResult::ApplicationMessage(message) => {
                     tracing::debug!(msg = ?message, "Received unexpected message during login flow");

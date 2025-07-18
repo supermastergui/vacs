@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use tokio::sync::{broadcast, mpsc, watch};
 use vacs_protocol::{ClientInfo, SignalingMessage};
+use vacs_vatsim::user::mock::MockUserService;
 
 pub struct MockSink {
     tx: mpsc::UnboundedSender<ws::Message>,
@@ -75,8 +76,17 @@ pub struct TestSetup {
 
 impl TestSetup {
     pub fn new() -> Self {
+        let mut vatsim_users = HashMap::new();
+        for i in 0..=5 {
+            vatsim_users.insert(format!("token{i}"), format!("client{i}"));
+        }
+        let vatsim_user_service = Arc::new(MockUserService::new(vatsim_users));
         let (shutdown_tx, shutdown_rx) = watch::channel(());
-        let app_state = Arc::new(AppState::new(AppConfig::default(), shutdown_rx));
+        let app_state = Arc::new(AppState::new(
+            AppConfig::default(),
+            vatsim_user_service,
+            shutdown_rx,
+        ));
         let client_info = ClientInfo {
             id: "client1".to_string(),
             display_name: "Client 1".to_string(),

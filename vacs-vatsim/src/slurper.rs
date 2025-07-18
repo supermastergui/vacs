@@ -35,9 +35,6 @@
 
 use anyhow::Context;
 
-/// User-Agent string used for all HTTP requests.
-static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-
 /// Default timeout for HTTP requests against the slurper API.
 /// Can be overwritten using [`SlurperClient::with_timeout`].
 const SLURPER_DEFAULT_HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
@@ -49,6 +46,9 @@ const SLURPER_STATION_NAME_FIELD_INDEX: usize = 1;
 /// Index of the facility type field in the slurper CSV line.
 /// Fields are listed in the [VATSIM Slurper API docs](https://vatsim.dev/api/slurper-api/get-user-info).
 const SLURPER_FACILITY_TYPE_FIELD_INDEX: usize = 2;
+/// Index of the frequency field in the slurper CSV line.
+/// Fields are listed in the [VATSIM Slurper API docs](https://vatsim.dev/api/slurper-api/get-user-info).
+const SLURPER_FREQUENCY_FIELD_INDEX: usize = 3;
 /// Slurper facility type for ATC clients.
 const SLURPER_FACILITY_TYPE_ATC: &str = "atc";
 /// Slurper facility type for pilots.
@@ -77,7 +77,7 @@ impl SlurperClient {
     /// ```
     pub fn new(api_base_url: &str) -> anyhow::Result<Self> {
         let client = reqwest::ClientBuilder::new()
-            .user_agent(APP_USER_AGENT)
+            .user_agent(crate::APP_USER_AGENT)
             .timeout(SLURPER_DEFAULT_HTTP_TIMEOUT)
             .build()
             .context("Failed to create HTTP client")?;
@@ -102,7 +102,7 @@ impl SlurperClient {
     /// ```
     pub fn with_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
         self.client = reqwest::ClientBuilder::new()
-            .user_agent(APP_USER_AGENT)
+            .user_agent(crate::APP_USER_AGENT)
             .timeout(timeout)
             .build()
             .context("Failed to create HTTP client")?;

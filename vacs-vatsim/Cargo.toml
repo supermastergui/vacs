@@ -4,11 +4,20 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+oauth = ["dep:async-trait", "dep:oauth2"]
+user = ["dep:async-trait", "dep:serde"]
+slurper = ["dep:bytes", "dep:csv", "dep:serde"]
+
 [dependencies]
 anyhow = { workspace = true }
-bytes = { workspace = true }
-csv = { workspace = true }
-reqwest = { workspace = true }
+async-trait = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
+oauth2 = { workspace = true, optional = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true, optional = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

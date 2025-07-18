@@ -1,9 +1,11 @@
 use crate::app::{create_app, serve};
 use crate::config::{AppConfig, AuthConfig};
 use crate::state::AppState;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use vacs_vatsim::user::mock::MockUserService;
 
 pub struct TestApp {
     state: Arc<AppState>,
@@ -17,13 +19,18 @@ impl TestApp {
         let config = AppConfig {
             auth: AuthConfig {
                 login_flow_timeout_millis: 100,
-                ..Default::default()
             },
             ..Default::default()
         };
 
+        let mut vatsim_users = HashMap::new();
+        for i in 0..=5 {
+            vatsim_users.insert(format!("token{i}"), format!("client{i}"));
+        }
+        let vatsim_user_service = Arc::new(MockUserService::new(vatsim_users));
+
         let (shutdown_tx, shutdown_rx) = watch::channel(());
-        let state = Arc::new(AppState::new(config, shutdown_rx));
+        let state = Arc::new(AppState::new(config, vatsim_user_service, shutdown_rx));
 
         let app = create_app();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -36,7 +43,7 @@ impl TestApp {
 
         Self {
             state,
-            addr: format!("ws://{}/ws", addr),
+            addr: format!("ws://{addr}/ws"),
             shutdown_tx,
             handle,
         }

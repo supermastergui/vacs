@@ -161,7 +161,6 @@ impl<T: SignalingTransport> SignalingClient<T> {
     ) -> Result<Vec<ClientInfo>, SignalingError> {
         tracing::debug!("Sending Login message to server");
         self.send(SignalingMessage::Login {
-            id: id.to_string(),
             token: token.to_string(),
         })
         .await?;
@@ -281,7 +280,6 @@ mod tests {
         let (_shutdown_tx, shutdown_rx) = watch::channel(());
         let mut client = SignalingClient::new(mock, shutdown_rx);
         let msg = SignalingMessage::Login {
-            id: "test".to_string(),
             token: "test".to_string(),
         };
 
@@ -298,7 +296,6 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
         let mut client = SignalingClient::new(mock, shutdown_rx);
         let msg = SignalingMessage::Login {
-            id: "test".to_string(),
             token: "test".to_string(),
         };
 
@@ -317,7 +314,6 @@ mod tests {
         let (_shutdown_tx, shutdown_rx) = watch::channel(());
         let mut client = SignalingClient::new(mock, shutdown_rx);
         let msg = SignalingMessage::Login {
-            id: "test".to_string(),
             token: "test".to_string(),
         };
 
@@ -351,7 +347,6 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
         let mut client = SignalingClient::new(mock, shutdown_rx);
         let msg = SignalingMessage::Login {
-            id: "test".to_string(),
             token: "test".to_string(),
         };
 
@@ -405,7 +400,6 @@ mod tests {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
         let mut client = SignalingClient::new(mock, shutdown_rx);
         let msg = SignalingMessage::Login {
-            id: "test".to_string(),
             token: "test".to_string(),
         };
 
@@ -488,7 +482,7 @@ mod tests {
         assert_eq!(login_result.unwrap(), test_clients);
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -504,7 +498,7 @@ mod tests {
         assert_matches!(login_result, Err(SignalingError::Timeout(_)));
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -527,7 +521,7 @@ mod tests {
         );
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -552,7 +546,7 @@ mod tests {
         );
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -575,7 +569,7 @@ mod tests {
         );
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -596,7 +590,7 @@ mod tests {
         assert_matches!(login_result, Err(SignalingError::ProtocolError(_)));
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 
     #[test(tokio::test)]
@@ -617,6 +611,6 @@ mod tests {
         assert_matches!(login_result, Err(SignalingError::ServerError(_)));
 
         let sent_message = handle.outgoing_rx.recv().await;
-        assert_matches!(sent_message, Some(SignalingMessage::Login { ref id, ref token }) if id == "client1" && token == "token1");
+        assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
     }
 }

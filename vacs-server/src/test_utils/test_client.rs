@@ -46,13 +46,12 @@ impl TestClient {
         F: FnOnce(&[ClientInfo]) -> anyhow::Result<()>,
     {
         let login_msg = SignalingMessage::Login {
-            id: self.id.to_string(),
             token: self.token.to_string(),
         };
         self.send_and_expect_with_timeout(login_msg, Duration::from_millis(100), |msg| match msg {
             SignalingMessage::ClientList { clients } => client_list_predicate(&clients),
             SignalingMessage::LoginFailure { reason } => {
-                return Err(anyhow::anyhow!("Login failed: {:?}", reason));
+                Err(anyhow::anyhow!("Login failed: {:?}", reason))
             }
             _ => Err(anyhow::anyhow!("Unexpected response: {:?}", msg)),
         })
@@ -196,9 +195,8 @@ pub async fn setup_test_clients(
     for (id, token) in clients {
         let client = TestClient::new_with_login(addr, id, token, |clients| {
             assert!(
-                clients.iter().any(|c| c.id == id.to_string()),
-                "Client {} not found in client list",
-                id
+                clients.iter().any(|c| c.id == *id),
+                "Client {id} not found in client list"
             );
             Ok(())
         })
@@ -215,13 +213,12 @@ pub async fn setup_n_test_clients(addr: &str, num_clients: usize) -> Vec<TestCli
     for n in 1..=num_clients {
         let client = TestClient::new_with_login(
             addr,
-            &format!("client{}", n),
-            &format!("token{}", n),
+            &format!("client{n}"),
+            &format!("token{n}"),
             |clients| {
                 assert!(
-                    clients.iter().any(|c| c.id == format!("client{}", n)),
-                    "Client {} not found in client list",
-                    n
+                    clients.iter().any(|c| c.id == format!("client{n}")),
+                    "Client {n} not found in client list",
                 );
                 Ok(())
             },

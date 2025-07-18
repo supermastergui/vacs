@@ -8,6 +8,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use vacs_server::app::create_app;
 use vacs_server::config::AppConfig;
 use vacs_server::state::AppState;
+use vacs_vatsim::user::connect::ConnectUserService;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,9 +27,17 @@ async fn main() -> anyhow::Result<()> {
 
     let config = load_config()?;
 
+    let vatsim_user_service = Arc::new(ConnectUserService::new(
+        &config.vatsim.user_service.user_details_endpoint_url,
+    )?);
+
     let (shutdown_tx, shutdown_rx) = watch::channel(());
 
-    let app_state = Arc::new(AppState::new(config.clone(), shutdown_rx.clone()));
+    let app_state = Arc::new(AppState::new(
+        config.clone(),
+        vatsim_user_service,
+        shutdown_rx.clone(),
+    ));
     let app = create_app();
 
     let listener = tokio::net::TcpListener::bind(config.server.bind_addr).await?;
@@ -49,6 +58,10 @@ fn load_config() -> anyhow::Result<AppConfig> {
     Config::builder()
         .set_default("server.bind_addr", "127.0.0.1:3000")?
         .set_default("auth.login_flow_timeout_millis", 10000)?
+        .set_default(
+            "vatsim.user_service.user_details_endpoint_url",
+            "https://auth.vatsim.net/api/user",
+        )?
         .add_source(
             File::with_name(
                 directories::ProjectDirs::from("app", "vacs", "vacs-server")
