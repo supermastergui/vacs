@@ -5,8 +5,14 @@ import TopButtonRow from "./components/top-button-row.tsx";
 import IncomingList from "./components/ui/incoming-list.tsx";
 import Button from "./components/ui/button.tsx";
 import CallList from "./components/call-list.tsx";
+import {useEffect} from "preact/hooks";
+import {invoke} from "@tauri-apps/api/core";
 
 function App() {
+    useEffect(() => {
+        void invoke("frontend_ready");
+    }, []);
+
     return (
         <div className="h-screen flex flex-col">
             <div className="w-full h-12 bg-gray-300 flex flex-row border-gray-700 border-b">
@@ -18,7 +24,7 @@ function App() {
                 <TopButtonRow />
                 <div className="flex flex-row w-full h-[calc(100%-10rem)] pl-1">
                     {/* Main Area */}
-                    <div className="h-full w-[calc(100%-6rem)] overflow-hidden bg-gray-300 border-l-1 border-t-1 border-r-2 border-b-2 border-gray-700 rounded-sm flex flex-row">
+                    <div className="h-full w-[calc(100%-6rem)] overflow-hidden bg-[#B5BBC6] border-l-1 border-t-1 border-r-2 border-b-2 border-gray-700 rounded-sm flex flex-row">
                         <CallList />
                     </div>
                     {/* Right Button Row */}

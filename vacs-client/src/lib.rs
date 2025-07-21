@@ -39,26 +39,16 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::app::frontend_ready,
             commands::auth::open_auth_url,
             commands::auth::check_auth_session,
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build tauri application")
-        .run(move |app_handle, event| match event {
-            RunEvent::Ready => {
-                let app_handle = app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    auth::check_auth_session(&app_handle)
-                        .await
-                        .expect("Failed to check auth session");
-                });
-            }
-            RunEvent::ExitRequested { .. } => {
-                app_handle
-                    .state::<AppState>()
-                    .persist()
-                    .expect("Failed to persist app state");
-            }
-            _ => {}
+        .run(move |app_handle, event| if let RunEvent::ExitRequested { .. } = event {
+            app_handle
+                .state::<AppState>()
+                .persist()
+                .expect("Failed to persist app state");
         });
 }

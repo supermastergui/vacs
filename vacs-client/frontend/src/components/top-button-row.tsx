@@ -23,9 +23,9 @@ function TopButtonRow() {
                 PLC<br/>LSP<br/>on/off
             </Button>
             <Button color="cyan">SPLIT</Button>
-            <Link to={location === "/settings" ? "/" : "/settings"}>
+            <Link to={location === "/settings" ? "/" : "/settings"} draggable={false}>
                 <Button color={location === "/settings" ? "blue" : "cyan"} className="h-full flex justify-center items-center">
-                    <img src={wrenchAndDriver} alt="Settings" className="h-12 w-12" />
+                    <img src={wrenchAndDriver} alt="Settings" className="h-12 w-12" draggable={false} />
                 </Button>
             </Link>
             <Button color="cyan" className="min-w-20" onClick={() => invoke("open_auth_url")}></Button>

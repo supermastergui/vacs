@@ -28,11 +28,11 @@ const ActiveButtonColors: Record<ButtonColor, string> = {
 };
 
 export const DisabledButtonColors: Record<ButtonColor, string> = {
-  cyan: "!border-cyan-900 !border",
-  green: "!border-green-950 !border",
-  gray: "!border-gray-700 !border !shadow-none",
-  blue: "!border-blue-950 !border",
-  emerald: "!border-emerald-950 !border"
+  cyan: "disabled:!border-cyan-900 disabled:!border",
+  green: "disabled:!border-green-950 disabled:!border",
+  gray: "disabled:!border-gray-700 disabled:!border disabled:!shadow-none",
+  blue: "disabled:!border-blue-950 disabled:!border",
+  emerald: "disabled:!border-emerald-950 disabled:!border"
 };
 
 function Button(props: ButtonProps) {
@@ -42,10 +42,11 @@ function Button(props: ButtonProps) {
         "leading-5 w-20 cursor-pointer border-2 font-semibold",
         ButtonColors[props.color],
         ActiveButtonColors[props.color],
-        props.disabled && DisabledButtonColors[props.color],
+        DisabledButtonColors[props.color],
         props.className
       )}
       onClick={props.onClick}
+      disabled={props.disabled}
     >
       {props.children}
     </button>
