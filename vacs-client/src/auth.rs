@@ -3,7 +3,7 @@ use crate::state::AppState;
 use anyhow::Context;
 use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
-use vacs_protocol::http::auth::{AuthExchangeToken, UserInfo, InitVatsimLogin};
+use vacs_protocol::http::auth::{AuthExchangeToken, InitVatsimLogin, UserInfo};
 
 pub async fn open_auth_url(app_state: &AppState) -> anyhow::Result<()> {
     let auth_url = app_state
@@ -11,6 +11,8 @@ pub async fn open_auth_url(app_state: &AppState) -> anyhow::Result<()> {
         .await
         .context("Failed to get auth URL")?
         .url;
+    
+    log::info!("Opening auth URL: {}", auth_url);
 
     tauri_plugin_opener::open_url(auth_url, None::<&str>)
         .context("Failed to open auth URL with the default browser")?;
@@ -53,4 +55,22 @@ pub async fn handle_auth_callback(app: &AppHandle, url: &str) -> anyhow::Result<
     app.emit("vatsim-cid", cid).ok();
 
     Ok(())
+}
+
+pub async fn check_auth_session(app: &AppHandle) -> anyhow::Result<bool> {
+    log::debug!("Fetching user info");
+    let user_info = app
+        .state::<AppState>()
+        .http_get::<UserInfo>(BackendEndpoint::UserInfo, None)
+        .await
+        .context("Failed to fetch user info");
+    
+    if let Ok(user_info) = user_info {
+        log::info!("Authenticated as CID {}", user_info.cid);
+        app.emit("vatsim-cid", user_info.cid)?;
+        Ok(true)
+    } else {
+        log::info!("Not authenticated");
+        Ok(false)
+    }
 }

@@ -24,17 +24,12 @@ pub struct SecureCookieStore {
 impl SecureCookieStore {
     pub fn new<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let store = if path.as_ref().exists() {
-            log::debug!(
-                "Loading encrypted cookie store from disk: {}",
-                path.as_ref().display()
-            );
-            let encrypted = fs::read(path.as_ref())
-                .context("Failed to read encrypted cookie store from disk")?;
-
-            log::trace!("Decrypting cookie store");
-            Self::decrypt_store(encrypted).context("Failed to decrypt cookie store")?
+            Self::load(path.as_ref())
+        } else if path.as_ref().with_extension("bak").exists() {
+            log::warn!("Encrypted cookie store on disk is missing, restoring from backup");
+            Self::load(path.as_ref().with_extension("bak"))
         } else {
-            log::debug!("Creating new encrypted cookie store");
+            log::info!("Encrypted cookie store does not existing on disk, creating new one");
             CookieStore::new()
         };
 
@@ -42,6 +37,42 @@ impl SecureCookieStore {
             store: RwLock::new(store),
             path: path.as_ref().to_path_buf(),
         })
+    }
+
+    pub fn load<P: AsRef<Path>>(path: P) -> CookieStore {
+        log::debug!(
+            "Loading encrypted cookie store from disk: {}",
+            path.as_ref().display()
+        );
+        match fs::read(path.as_ref()) {
+            Ok(encrypted) => {
+                log::trace!("Decrypting cookie store");
+                match Self::decrypt_store(encrypted).context("Failed to decrypt cookie store") {
+                    Ok(store) => store,
+                    Err(err) => {
+                        log::error!("Failed to decrypt cookie store: {err}");
+                        log::warn!("Resetting cookie store, re-authentication will be required");
+
+                        let corrupted_path = path.as_ref().with_extension("corrupted");
+                        if let Err(err) = fs::rename(path.as_ref(), corrupted_path.as_path()) {
+                            log::warn!("Failed to preserve corrupted cookie store: {err}");
+                            fs::remove_file(corrupted_path).ok();
+                        }
+
+                        if let Err(err) = secrets::remove(SecretKey::CookieStoreEncryptionKey) {
+                            log::warn!("Failed to remove cookie store encryption key: {err}");
+                        }
+
+                        CookieStore::new()
+                    }
+                }
+            }
+            Err(err) => {
+                log::error!("Failed to read encrypted cookie store from disk: {err}");
+                log::warn!("Resetting cookie store, re-authentication will be required");
+                CookieStore::new()
+            }
+        }
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -56,6 +87,11 @@ impl SecureCookieStore {
 
         log::trace!("Encrypting cookie store");
         let encrypted = Self::encrypt_store(&store).context("Failed to encrypt cookie store")?;
+
+        if self.path.exists() {
+            log::trace!("Backing up existing encrypted cookie store on disk");
+            fs::copy(&self.path, self.path.with_extension("bak")).ok();
+        }
 
         log::trace!("Writing encrypted cookie store to disk");
         fs::write(&self.path, encrypted)
@@ -105,6 +141,14 @@ impl SecureCookieStore {
     }
 
     fn decrypt_store(encrypted: Vec<u8>) -> anyhow::Result<CookieStore> {
+        if encrypted.len() < NONCE_SIZE {
+            anyhow::bail!(
+                "Encrypted cookie store content is too short ({} bytes), expected at least {} bytes",
+                encrypted.len(),
+                NONCE_SIZE
+            );
+        }
+
         let (nonce, ciphertext) = encrypted.split_at(NONCE_SIZE);
         let nonce = Nonce::from_slice(nonce);
         let key = Self::get_or_generate_encryption_key()?;

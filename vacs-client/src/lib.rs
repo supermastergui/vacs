@@ -1,21 +1,13 @@
 mod auth;
+mod commands;
 mod config;
+mod error;
 mod secrets;
 mod signaling;
 mod state;
 
 use crate::state::AppState;
-use tauri::{AppHandle, Manager};
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-async fn greet(app: AppHandle) -> Result<(), String> {
-    auth::open_auth_url(&app.state::<AppState>())
-        .await
-        .expect("Failed to open auth url");
-
-    Ok(())
-}
+use tauri::{Manager, RunEvent};
 
 pub fn run() {
     tauri::Builder::default()
@@ -46,15 +38,27 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            commands::auth::open_auth_url,
+            commands::auth::check_auth_session,
+        ])
         .build(tauri::generate_context!())
         .expect("Failed to build tauri application")
-        .run(move |app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+        .run(move |app_handle, event| match event {
+            RunEvent::Ready => {
+                let app_handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    auth::check_auth_session(&app_handle)
+                        .await
+                        .expect("Failed to check auth session");
+                });
+            }
+            RunEvent::ExitRequested { .. } => {
                 app_handle
                     .state::<AppState>()
                     .persist()
                     .expect("Failed to persist app state");
             }
+            _ => {}
         });
 }

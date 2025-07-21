@@ -16,7 +16,7 @@ function TopButtonRow() {
             </Button>
             <Button color="cyan">TRANS</Button>
             <Button color="cyan">DIV</Button>
-            <Button color="cyan">
+            <Button color="cyan" onClick={() => invoke("check_auth_session")}>
                 PLAY<br/>BACK
             </Button>
             <Button color="cyan" className="text-slate-400" disabled={true}>
@@ -28,7 +28,7 @@ function TopButtonRow() {
                     <img src={wrenchAndDriver} alt="Settings" className="h-12 w-12" />
                 </Button>
             </Link>
-            <Button color="cyan" className="min-w-20" onClick={() => invoke("greet")}></Button>
+            <Button color="cyan" className="min-w-20" onClick={() => invoke("open_auth_url")}></Button>
         </div>
     );
 }
