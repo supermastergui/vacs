@@ -89,7 +89,7 @@ impl Default for OAuthConfig {
         Self {
             auth_url: "https://auth-dev.vatsim.net/oauth/authorize".to_string(),
             token_url: "https://auth-dev.vatsim.net/oauth/token".to_string(),
-            redirect_url: "vacs://auth/callback".to_string(),
+            redirect_url: "vacs://auth/vatsim/callback".to_string(),
             client_id: "".to_string(),
             client_secret: "".to_string(),
         }

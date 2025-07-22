@@ -74,7 +74,7 @@ fn load_config() -> anyhow::Result<AppConfig> {
             "auth.oauth.token_url",
             "https://auth-dev.vatsim.net/oauth/token",
         )?
-        .set_default("auth.oauth.redirect_url", "vacs://auth/callback")?
+        .set_default("auth.oauth.redirect_url", "vacs://auth/vatsim/callback")?
         .set_default(
             "vatsim.user_service.user_details_endpoint_url",
             "https://auth-dev.vatsim.net/api/user",
