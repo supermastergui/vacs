@@ -12,6 +12,7 @@ import {setupAuthListeners} from "./listeners/auth-listener.ts";
 import CallList from "./components/CallList.tsx";
 import ConnectPage from "./pages/ConnectPage.tsx";
 import SettingsPage from "./pages/SettingsPage.tsx";
+import telephone from "./assets/telephone.svg";
 
 function App() {
     const authStatus = useAuthStore(state => state.status);
@@ -54,7 +55,9 @@ function App() {
                     </div>
                     {/* Right Button Row */}
                     <div className="w-24 h-full px-2 pb-6 flex flex-col justify-between">
-                        <Button color="cyan" className="h-16 shrink-0"></Button>
+                        <Button color="cyan" className="h-16 shrink-0 flex justify-center items-center">
+                            <img src={telephone} alt="Telephone" className="h-18 w-18" draggable={false} />
+                        </Button>
                         <IncomingList/>
                     </div>
                 </div>
