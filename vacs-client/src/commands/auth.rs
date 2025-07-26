@@ -25,8 +25,5 @@ pub async fn logout(app: AppHandle) -> Result<(), Error> {
     auth::logout(&app)
         .await
         .context("Failed to logout")
-        .map_err(|err| {
-            log::error!("Failed to logout and logout again: {}", err.backtrace());
-            Error::from(err)
-        })
+        .map_err(Error::from)
 }
