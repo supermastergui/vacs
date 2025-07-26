@@ -1,4 +1,5 @@
 use crate::config::BackendEndpoint;
+use crate::error::{Error, HandleUnauthorizedExt};
 use crate::state::AppState;
 use anyhow::Context;
 use serde_json::Value;
@@ -6,11 +7,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use url::Url;
 use vacs_protocol::http::auth::{AuthExchangeToken, InitVatsimLogin, UserInfo};
 
-pub async fn open_auth_url(app_state: &AppState) -> anyhow::Result<()> {
+pub async fn open_auth_url(app_state: &AppState) -> Result<(), Error> {
     let auth_url = app_state
         .http_get::<InitVatsimLogin>(BackendEndpoint::InitAuth, None)
-        .await
-        .context("Failed to get auth URL")?
+        .await?
         .url;
 
     log::info!("Opening auth URL: {auth_url}");
@@ -21,7 +21,8 @@ pub async fn open_auth_url(app_state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn handle_auth_callback(app: &AppHandle, url: &str) -> anyhow::Result<()> {
+#[vacs_macros::log_err]
+pub async fn handle_auth_callback(app: &AppHandle, url: &str) -> Result<(), Error> {
     let url = Url::parse(url).context("Failed to parse auth callback URL")?;
 
     let mut code = None;
@@ -48,8 +49,7 @@ pub async fn handle_auth_callback(app: &AppHandle, url: &str) -> anyhow::Result<
                 state: state.to_string(),
             }),
         )
-        .await
-        .context("Failed to exchange auth code")?
+        .await?
         .cid;
 
     log::info!("Successfully authenticated as CID {cid}");
@@ -58,33 +58,39 @@ pub async fn handle_auth_callback(app: &AppHandle, url: &str) -> anyhow::Result<
     Ok(())
 }
 
-pub async fn check_auth_session(app: &AppHandle) -> anyhow::Result<bool> {
+pub async fn check_auth_session(app: &AppHandle) -> Result<(), Error> {
     log::debug!("Fetching user info");
-    let user_info = app
-        .state::<AppState>()
+    let response = app.state::<AppState>()
         .http_get::<UserInfo>(BackendEndpoint::UserInfo, None)
-        .await
-        .context("Failed to fetch user info");
+        .await;
 
-    if let Ok(user_info) = user_info {
-        log::info!("Authenticated as CID {}", user_info.cid);
-        app.emit("auth:authenticated", user_info.cid).ok();
-        Ok(true)
-    } else {
-        log::info!("Not authenticated");
-        app.emit("auth:unauthenticated", Value::Null).ok();
-        Ok(false)
+    match response {
+        Ok(user_info) => {
+            log::info!("Authenticated as CID {}", user_info.cid);
+            app.emit("auth:authenticated", user_info.cid).ok();
+            Ok(())
+        }
+        Err(Error::Unauthorized) => {
+            log::info!("Not authenticated");
+            app.emit("auth:unauthenticated", Value::Null).ok();
+            Ok(())
+        }
+        Err(err) => {
+            log::info!("Not authenticated");
+            app.emit("auth:unauthenticated", Value::Null).ok();
+            Err(err)
+        }
     }
 }
 
-pub async fn logout(app: &AppHandle) -> anyhow::Result<()> {
+pub async fn logout(app: &AppHandle) -> Result<(), Error> {
     log::debug!("Logging out");
 
     let app_state = app.state::<AppState>();
     app_state
         .http_post::<(), ()>(BackendEndpoint::Logout, None, None)
         .await
-        .context("Failed to logout")?;
+        .handle_unauthorized(app)?;
 
     app_state
         .clear_cookie_store()

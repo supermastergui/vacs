@@ -14,6 +14,8 @@ import ConnectPage from "./pages/ConnectPage.tsx";
 import SettingsPage from "./pages/SettingsPage.tsx";
 import telephone from "./assets/telephone.svg";
 import ErrorOverlay from "./components/ErrorOverlay.tsx";
+import {invokeSafe} from "./error.ts";
+import {setupErrorListener} from "./listeners/error-listener.ts";
 
 function App() {
     const authStatus = useAuthStore(state => state.status);
@@ -21,9 +23,10 @@ function App() {
     useEffect(() => {
         void invoke("frontend_ready");
 
+        setupErrorListener();
         setupAuthListeners();
 
-        void invoke("check_auth_session");
+        void invokeSafe("check_auth_session");
     }, []);
 
     return (

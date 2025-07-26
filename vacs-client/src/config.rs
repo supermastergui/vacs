@@ -5,7 +5,7 @@ use serde::Deserialize;
 /// User-Agent string used for all HTTP requests.
 pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub backend: BackendConfig,
 }
@@ -20,6 +20,7 @@ impl AppConfig {
             .set_default("backend.endpoints.user_info", "/auth/user")?
             .set_default("backend.endpoints.logout", "/auth/logout")?
             .set_default("backend.endpoints.ws_token", "/ws/token")?
+            .set_default("backend.timeout_ms", 2000)?
             .add_source(
                 File::with_name(
                     project_dirs()
@@ -40,11 +41,12 @@ impl AppConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BackendConfig {
     pub base_url: String,
     pub ws_url: String,
     pub endpoints: BackendEndpointsConfigs,
+    pub timeout_ms: u64,
 }
 
 impl BackendConfig {
@@ -68,7 +70,7 @@ pub enum BackendEndpoint {
     WsToken,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct BackendEndpointsConfigs {
     pub init_auth: String,
     pub exchange_code: String,

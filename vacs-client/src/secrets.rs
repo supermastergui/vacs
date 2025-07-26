@@ -17,6 +17,7 @@ impl SecretKey {
     }
 }
 
+#[allow(dead_code)]
 pub fn get(key: SecretKey) -> anyhow::Result<Option<String>> {
     match entry_for_key(key)?.get_password() {
         Ok(password) => Ok(Some(password)),
@@ -37,6 +38,7 @@ pub fn get_binary(key: SecretKey) -> anyhow::Result<Option<Vec<u8>>> {
     }
 }
 
+#[allow(dead_code)]
 pub fn set(key: SecretKey, value: &str) -> anyhow::Result<()> {
     entry_for_key(key)?
         .set_password(value)

@@ -1,10 +1,12 @@
 use crate::config::{APP_USER_AGENT, AppConfig, BackendEndpoint};
+use crate::error::Error;
 use crate::secrets::cookies::SecureCookieStore;
 use anyhow::Context;
 use reqwest::StatusCode;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 
 pub struct AppState {
@@ -16,12 +18,14 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> anyhow::Result<Self> {
         let cookie_store = Arc::new(SecureCookieStore::default());
+        let config = AppConfig::parse()?;
 
         Ok(Self {
-            config: AppConfig::parse()?,
+            config: config.clone(),
             http_client: reqwest::ClientBuilder::new()
                 .user_agent(APP_USER_AGENT)
                 .cookie_provider(cookie_store.clone())
+                .timeout(Duration::from_millis(config.backend.timeout_ms))
                 .build()
                 .context("Failed to build HTTP client")?,
             cookie_store,
@@ -60,7 +64,7 @@ impl AppState {
         &self,
         endpoint: BackendEndpoint,
         query: Option<&[(&str, &str)]>,
-    ) -> anyhow::Result<R>
+    ) -> Result<R, Error>
     where
         R: DeserializeOwned + Default,
     {
@@ -72,9 +76,9 @@ impl AppState {
             .get(request_url.clone())
             .send()
             .await
-            .context("Failed to send HTTP GET request")?
+            .map_err(map_reqwest_error)?
             .error_for_status()
-            .context("Received non-200 HTTP status for GET request")?;
+            .map_err(map_reqwest_status_code)?;
 
         let result = if response.status() == StatusCode::NO_CONTENT {
             R::default()
@@ -94,7 +98,7 @@ impl AppState {
         endpoint: BackendEndpoint,
         query: Option<&[(&str, &str)]>,
         payload: Option<P>,
-    ) -> anyhow::Result<R>
+    ) -> Result<R, Error>
     where
         R: DeserializeOwned + Default,
         P: Serialize,
@@ -111,9 +115,9 @@ impl AppState {
         let response = request
             .send()
             .await
-            .context("Failed to send HTTP POST request")?
+            .map_err(map_reqwest_error)?
             .error_for_status()
-            .context("Received non-200 HTTP status for POST request")?;
+            .map_err(map_reqwest_status_code)?;
 
         let result = if response.status() == StatusCode::NO_CONTENT {
             R::default()
@@ -126,5 +130,27 @@ impl AppState {
 
         log::trace!("HTTP POST request succeeded: {}", request_url.as_str());
         Ok(result)
+    }
+}
+
+fn map_reqwest_error(err: reqwest::Error) -> Error {
+    if err.is_timeout() || err.is_connect() {
+        return Error::Network(err.to_string());
+    }
+    Error::Reqwest(err)
+}
+
+fn map_reqwest_status_code(err: reqwest::Error) -> Error {
+    if let Some(status) = err.status() {
+        log::trace!(
+            "HTTP request received non-OK HTTP status: {}",
+            status.as_u16()
+        );
+        match status {
+            StatusCode::UNAUTHORIZED => Error::Unauthorized,
+            _ => Error::Reqwest(err),
+        }
+    } else {
+        Error::Reqwest(err)
     }
 }

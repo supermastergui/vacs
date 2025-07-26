@@ -1,16 +1,20 @@
 use serde::Serialize;
+use serde_json::Value;
+use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Auth error: {0}")]
-    Auth(String),
     #[error("Unauthorized")]
     Unauthorized,
+    #[error("Audio device error: {0}")]
+    AudioDevice(String),
     #[error("Network error: {0}")]
     Network(String),
+    #[error("HTTP error: {0}")]
+    Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
-    Generic(#[from] anyhow::Error),
+    Other(#[from] anyhow::Error),
 }
 
 impl serde::Serialize for Error {
@@ -22,7 +26,42 @@ impl serde::Serialize for Error {
     }
 }
 
-#[derive(Debug, Serialize)]
+pub trait HandleUnauthorizedExt<R> {
+    fn handle_unauthorized(self, app: &AppHandle) -> Result<R, Error>;
+}
+
+impl<R> HandleUnauthorizedExt<R> for Result<R, Error> {
+    fn handle_unauthorized(self, app: &AppHandle) -> Result<R, Error> {
+        match self {
+            Ok(val) => Ok(val),
+            Err(Error::Unauthorized) => {
+                log::info!("Not authenticated");
+                app.emit("auth:unauthenticated", Value::Null).ok();
+                Err(Error::Unauthorized)
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub trait LogErrExt<R> {
+    #[allow(dead_code)]
+    fn log_err(self) -> Result<R, Error>;
+}
+
+impl<R> LogErrExt<R> for Result<R, Error> {
+    fn log_err(self) -> Result<R, Error> {
+        match self {
+            Ok(val) => Ok(val),
+            Err(err) => {
+                log::error!("{:?}", err);
+                Err(err)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct FrontendError {
     title: String,
     message: String,
@@ -62,12 +101,15 @@ impl From<Error> for FrontendError {
 impl From<&Error> for FrontendError {
     fn from(err: &Error) -> Self {
         match err {
-            Error::Auth(err) => FrontendError::new("Auth error", err),
-            Error::Unauthorized => {
-                FrontendError::new_with_timeout("Auth error", "Unauthorized", 5000)
-            }
+            Error::Unauthorized => FrontendError::new_with_timeout(
+                "Unauthorized",
+                "Your authentication expired. Please log in again.",
+                5000,
+            ),
+            Error::AudioDevice(err) => FrontendError::new("Audio device error", err),
+            Error::Reqwest(err) => FrontendError::new("HTTP error", err.to_string()),
             Error::Network(err) => FrontendError::new("Network error", err),
-            Error::Generic(err) => FrontendError::new("Error", err.to_string()),
+            Error::Other(err) => FrontendError::new("Error", err.to_string()),
         }
     }
 }

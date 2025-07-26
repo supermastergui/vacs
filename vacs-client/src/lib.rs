@@ -7,7 +7,8 @@ mod signaling;
 mod state;
 
 use crate::state::AppState;
-use tauri::{Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent};
+use crate::error::FrontendError;
 
 pub fn run() {
     tauri::Builder::default()
@@ -22,9 +23,10 @@ pub fn run() {
                 let app = app.clone();
                 let url = url.clone();
                 tauri::async_runtime::spawn(async move {
-                    auth::handle_auth_callback(&app, &url)
-                        .await
-                        .expect("Failed to handle auth callback");
+                    if let Err(err) = auth::handle_auth_callback(&app, &url)
+                        .await {
+                        app.emit::<FrontendError>("error", err.into()).ok();
+                    }
                 });
             }
         }))
