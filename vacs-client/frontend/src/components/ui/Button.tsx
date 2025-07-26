@@ -10,7 +10,7 @@ export type ButtonProps = {
     children?: ComponentChildren;
     onClick?: (event: MouseEvent) => void;
     disabled?: boolean;
-    hightlight?: ButtonHighlightColor;
+    highlight?: ButtonHighlightColor;
 };
 
 const ButtonColors: Record<ButtonColor, string> = {
@@ -46,6 +46,14 @@ const ButtonHighlightColors: Record<ButtonHighlightColor, string> = {
 };
 
 function Button(props: ButtonProps) {
+    const isTextChild = typeof props.children === "string" || typeof props.children === "number";
+
+    const content = isTextChild ? (
+        <p className="w-full text-center">{props.children}</p>
+    ) : (
+        props.children
+    );
+
     return (
         <button
             className={clsx(
@@ -54,19 +62,20 @@ function Button(props: ButtonProps) {
                 ActiveButtonColors[props.color],
                 DisabledButtonColors[props.color],
                 props.className,
-                props.hightlight !== undefined && "p-1.5",
+                props.highlight !== undefined && "p-1.5",
+                !props.disabled && "active:[&>*]:translate-y-[1px] active:[&>*]:translate-x-[1px]"
             )}
             onClick={props.onClick}
             disabled={props.disabled}
         >
-            {props.hightlight === undefined ? (
-                props.children
+            {props.highlight === undefined ? (
+                content
             ) : (
                 <div className={clsx(
                     "w-full h-full text-center flex items-center justify-center",
-                    ButtonHighlightColors[props.hightlight],
+                    ButtonHighlightColors[props.highlight],
                 )}>
-                    {props.children}
+                    {content}
                 </div>
             )}
         </button>

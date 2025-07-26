@@ -7,8 +7,6 @@ import bellRing from "../assets/bell-ring.svg";
 import Select from "../components/ui/Select.tsx";
 import {navigate} from "wouter/use-browser-location";
 import {useAuthStore} from "../stores/auth-store.ts";
-import {invoke} from "@tauri-apps/api/core";
-import {openErrorOverlayFromUnknown} from "../error.ts";
 import {invokeStrict} from "../error.ts";
 
 function SettingsPage() {
@@ -67,7 +65,7 @@ function SettingsPage() {
                     </div>
                 </div>
                 <div className="h-20 w-full flex flex-row gap-2 justify-between p-2 [&>button]:px-1 [&>button]:shrink-0">
-                    <Button color="gray" className="rounded !text-base">Side<br/>tones</Button>
+                    <Button color="gray" className="rounded !text-base"><p>Side<br/>tones</p></Button>
                     <Button color="red" className="rounded !text-base" disabled={!isAuthenticated} onClick={handleLogoutClick}>Logout</Button>
                 </div>
             </div>

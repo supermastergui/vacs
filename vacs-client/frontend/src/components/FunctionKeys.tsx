@@ -12,15 +12,15 @@ function FunctionKeys() {
             <Button color="cyan">HOLD</Button>
             <Button color="cyan">PICKUP</Button>
             <Button color="cyan">
-                SUITE<br/>PICKUP
+                <p>SUITE<br/>PICKUP</p>
             </Button>
             <Button color="cyan">TRANS</Button>
             <Button color="cyan">DIV</Button>
             <Button color="cyan">
-                PLAY<br/>BACK
+                <p>PLAY<br/>BACK</p>
             </Button>
             <Button color="cyan" className="text-slate-400" disabled={true}>
-                PLC<br/>LSP<br/>on/off
+                <p>PLC<br/>LSP<br/>on/off</p>
             </Button>
             <Button color="cyan">SPLIT</Button>
             <Link to={location === "/settings" ? "/" : "/settings"} draggable={false}>
