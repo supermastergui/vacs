@@ -21,7 +21,12 @@ function Clock() {
             const minutes = now.getUTCMinutes().toString().padStart(2, '0');
             const day = now.getUTCDate().toString().padStart(2, '0');
 
-            setTime({hours, minutes, day});
+            setTime(prev => {
+                if (prev.hours === hours && prev.minutes === minutes && prev.day === day) {
+                    return prev;
+                }
+                return { hours, minutes, day };
+            });
         };
 
         updateClock();
