@@ -8,16 +8,17 @@ import Select from "../components/ui/Select.tsx";
 import {navigate} from "wouter/use-browser-location";
 import {useAuthStore} from "../stores/auth-store.ts";
 import {invokeStrict} from "../error.ts";
+import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
 
 function SettingsPage() {
     const isAuthenticated = useAuthStore(state => state.status === "authenticated");
 
-    const handleLogoutClick = async () => {
+    const handleLogoutClick = useAsyncDebounce(async () => {
         try {
             await invokeStrict("logout");
             navigate("/");
         } catch {}
-    }
+    });
 
     return (
         <div className="h-full w-full bg-blue-700 border-t-0 px-2 pb-2 flex flex-col overflow-auto">
@@ -54,7 +55,7 @@ function SettingsPage() {
                             </div>
                         </div>
                     </div>
-                    <div className="h-full grow border-r-2 border-zinc-200 flex flex-col">
+                    <div className="h-full grow flex flex-col">
                         <p className="w-full text-center border-b-2 border-zinc-200 uppercase font-semibold">Devices</p>
                         <div className="w-full grow px-3 py-1.5 flex flex-col">
                             <p className="w-full text-center font-semibold">Headset</p>

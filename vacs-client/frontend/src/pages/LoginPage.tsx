@@ -1,9 +1,10 @@
 import {invokeSafe} from "../error.ts";
+import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
 
 function LoginPage() {
-    const handleLoginClick = () => {
-        void invokeSafe("open_auth_url");
-    };
+    const handleLoginClick = useAsyncDebounce(async () => {
+        await invokeSafe("open_auth_url");
+    });
 
     return (
         <div className="h-full w-full flex justify-center items-center p-4">
