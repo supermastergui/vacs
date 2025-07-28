@@ -3,9 +3,12 @@ use crate::state::AppState;
 use crate::ws::application_message::handle_application_message;
 use crate::ws::message::{MessageResult, receive_message, send_message};
 use crate::ws::traits::{WebSocketSink, WebSocketStream};
+use axum::extract::ws;
+use futures_util::SinkExt;
 use std::ops::ControlFlow;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, watch};
+use std::time::Duration;
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tracing::{instrument, Instrument};
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
@@ -40,8 +43,8 @@ impl ClientSession {
     pub async fn handle_interaction<R: WebSocketStream + 'static, T: WebSocketSink + 'static>(
         &mut self,
         app_state: &Arc<AppState>,
-        mut websocket_rx: R,
-        mut websocket_tx: T,
+        websocket_rx: R,
+        websocket_tx: T,
         broadcast_rx: &mut broadcast::Receiver<SignalingMessage>,
         rx: &mut mpsc::Receiver<SignalingMessage>,
         shutdown_rx: &mut watch::Receiver<()>,
@@ -49,41 +52,19 @@ impl ClientSession {
     ) {
         tracing::debug!("Starting to handle client interaction");
 
+        let ws_outbound_tx = ClientSession::spawn_writer(websocket_tx, shutdown_rx.clone()).await;
+        let mut ws_inbound_rx = ClientSession::spawn_reader(websocket_rx, shutdown_rx.clone()).await;
+        let mut ping_shutdown_rx =
+            ClientSession::spawn_ping_task(&ws_outbound_tx, config::CLIENT_WEBSOCKET_PING_INTERVAL)
+                .await;
+
         tracing::trace!("Sending initial client list");
         let clients = app_state.list_clients_without_self(client_id).await;
         if let Err(err) =
-            send_message(&mut websocket_tx, SignalingMessage::ClientList { clients }).await
+            send_message(&ws_outbound_tx, SignalingMessage::ClientList { clients }).await
         {
             tracing::warn!(?err, "Failed to send initial client list");
         }
-
-        let (ws_tx, mut ws_rx) = mpsc::channel(config::CLIENT_WEBSOCKET_RECEIVE_CHANNEL_CAPACITY);
-        let websocket_receive_task = tokio::spawn(
-            async move {
-                loop {
-                    let message_result = receive_message(&mut websocket_rx).await;
-                    match message_result {
-                        MessageResult::ApplicationMessage(message) => {
-                            tracing::trace!("Forwarding message to application");
-                            if let Err(err) = ws_tx.send(message).await {
-                                tracing::warn!(?err, "Failed to forward message to application");
-                            }
-                        }
-                        MessageResult::ControlMessage => continue,
-                        MessageResult::Disconnected => {
-                            tracing::debug!("Client disconnected");
-                            break;
-                        }
-                        MessageResult::Error(err) => {
-                            tracing::warn!(?err, "Error while receiving message from client");
-                            break;
-                        }
-                    }
-                }
-                tracing::trace!("Finished receiving messages from client");
-            }
-            .instrument(tracing::Span::current()),
-        );
 
         loop {
             tokio::select! {
@@ -94,10 +75,15 @@ impl ClientSession {
                     break;
                 }
 
-                message = ws_rx.recv() => {
-                    match message {
-                        Some(message) => {
-                            match handle_application_message(app_state, self, &mut websocket_tx, message).await {
+                _ = &mut ping_shutdown_rx => {
+                    tracing::debug!("Ping task reported client disconnect");
+                    break;
+                }
+
+                msg = ws_inbound_rx.recv() => {
+                    match msg {
+                        Some(msg) => {
+                            match handle_application_message(app_state, self, &ws_outbound_tx, msg).await {
                                 ControlFlow::Continue(()) => continue,
                                 ControlFlow::Break(()) => {
                                     tracing::debug!("Breaking interaction loop");
@@ -116,7 +102,7 @@ impl ClientSession {
                     match message {
                         Some(message) => {
                             tracing::trace!("Received direct message");
-                            if let Err(err) = send_message(&mut websocket_tx, message).await {
+                            if let Err(err) = send_message(&ws_outbound_tx, message).await {
                                 tracing::warn!(?err, "Failed to send direct message");
                             }
                         }
@@ -131,7 +117,7 @@ impl ClientSession {
                     match message {
                         Ok(message) => {
                             tracing::trace!("Received broadcast message");
-                            if let Err(err) = send_message(&mut websocket_tx, message).await {
+                            if let Err(err) = send_message(&ws_outbound_tx, message).await {
                                 tracing::warn!(?err, "Failed to send broadcast message");
                             }
                         }
@@ -143,9 +129,133 @@ impl ClientSession {
             }
         }
 
-        websocket_receive_task.abort();
-
         tracing::debug!("Finished handling client interaction");
+    }
+
+    #[instrument(level = "debug", skip_all)]
+    pub async fn spawn_writer<T: WebSocketSink + 'static>(
+        mut websocket_tx: T,
+        mut shutdown_rx: watch::Receiver<()>,
+    ) -> mpsc::Sender<ws::Message> {
+        let (ws_outbound_tx, mut ws_outbound_rx) =
+            mpsc::channel::<ws::Message>(config::CLIENT_WEBSOCKET_TASK_CHANNEL_CAPACITY);
+
+        tokio::spawn(async move {
+            tracing::trace!("WebSocket writer task started");
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = shutdown_rx.changed() => {
+                        tracing::trace!("Shutdown signal received, stopping WebSocket reader task");
+                        break;
+                    }
+
+                    msg = ws_outbound_rx.recv() => {
+                        match msg {
+                            Some(msg) => {
+                                if let Err(err) = websocket_tx.send(msg).await {
+                                    tracing::warn!(?err, "Failed to send message to client");
+                                    break;
+                                }
+                            },
+                            None => {
+                                tracing::debug!("Outbound WebSocket channel closed, stopping WebSocket writer task");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            tracing::trace!("Sending close message to client");
+            if let Err(err) = websocket_tx.send(ws::Message::Close(None)).await {
+                tracing::warn!(?err, "Failed to send close message to client");
+            }
+
+            tracing::trace!("WebSocket writer task finished");
+        }
+            .instrument(tracing::Span::current()));
+
+        ws_outbound_tx
+    }
+
+    #[instrument(level = "debug", skip_all)]
+    pub async fn spawn_reader<R: WebSocketStream + 'static>(
+        mut websocket_rx: R,
+        mut shutdown_rx: watch::Receiver<()>,
+    ) -> mpsc::Receiver<SignalingMessage> {
+        let (ws_inbound_tx, ws_inbound_rx) =
+            mpsc::channel::<SignalingMessage>(config::CLIENT_WEBSOCKET_TASK_CHANNEL_CAPACITY);
+
+        tokio::spawn(async move {
+            tracing::trace!("WebSocket reader task started");
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = shutdown_rx.changed() => {
+                        tracing::trace!("Shutdown signal received, stopping WebSocket reader task");
+                        break;
+                    }
+
+                    msg = receive_message(&mut websocket_rx) => {
+                        match msg {
+                            MessageResult::ApplicationMessage(message) => {
+                                if let Err(err) = ws_inbound_tx.send(message).await {
+                                    tracing::warn!(?err, "Failed to forward message to application");
+                                    break;
+                                }
+                            }
+                            MessageResult::ControlMessage => continue,
+                            MessageResult::Disconnected => {
+                                tracing::debug!("Client disconnected");
+                                break;
+                            }
+                            MessageResult::Error(err) => {
+                                tracing::warn!(?err, "Error while receiving message from client");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            tracing::trace!("WebSocket reader task finished");
+        }
+            .instrument(tracing::Span::current()));
+
+        ws_inbound_rx
+    }
+
+    #[instrument(level = "debug", skip(ws_outbound_tx))]
+    pub async fn spawn_ping_task(
+        ws_outbound_tx: &mpsc::Sender<ws::Message>,
+        interval_duration: Duration,
+    ) -> oneshot::Receiver<()> {
+        let (ping_shutdown_tx, ping_shutdown_rx) = oneshot::channel();
+
+        let ws_outbound_tx = ws_outbound_tx.clone();
+        tokio::spawn(async move {
+            tracing::trace!("WebSocket ping task started");
+            let mut interval = tokio::time::interval(interval_duration);
+            loop {
+                interval.tick().await;
+
+                tracing::trace!("Sending ping to client");
+                if let Err(err) = ws_outbound_tx
+                    .send(ws::Message::Ping(bytes::Bytes::new()))
+                    .await
+                {
+                    tracing::warn!(?err, "Failed to send ping to client");
+                    let _ = ping_shutdown_tx.send(());
+                    break;
+                }
+            }
+            tracing::trace!("WebSocket ping task finished");
+        }
+            .instrument(tracing::Span::current()));
+
+        ping_shutdown_rx
     }
 }
 
@@ -227,9 +337,7 @@ mod tests {
             Some(ws::Message::Text(text)) => {
                 assert_eq!(
                     text,
-                    Utf8Bytes::from_static(
-                        r#"{"ClientList":{"clients":[]}}"#
-                    )
+                    Utf8Bytes::from_static(r#"{"ClientList":{"clients":[]}}"#)
                 );
             }
             _ => panic!("Expected client list message"),

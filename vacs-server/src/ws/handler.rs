@@ -1,6 +1,6 @@
 use crate::state::AppState;
 use crate::ws::auth::handle_websocket_login;
-use crate::ws::message::send_message;
+use crate::ws::message::send_message_raw;
 use axum::extract::ws::WebSocket;
 use axum::extract::{ConnectInfo, State, WebSocketUpgrade};
 use axum::response::IntoResponse;
@@ -39,7 +39,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     let (mut client, mut rx) = match state.register_client(&client_id).await {
         Ok(client) => client,
         Err(_) => {
-            if let Err(err) = send_message(
+            if let Err(err) = send_message_raw(
                 &mut websocket_tx,
                 SignalingMessage::LoginFailure {
                     reason: LoginFailureReason::DuplicateId,

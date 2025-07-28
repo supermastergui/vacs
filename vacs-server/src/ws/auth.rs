@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::ws::message::{MessageResult, receive_message, send_message};
+use crate::ws::message::{MessageResult, receive_message, send_message_raw};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};
@@ -30,7 +30,7 @@ pub async fn handle_websocket_login(
                                 reason: LoginFailureReason::InvalidCredentials,
                             };
                             if let Err(err) =
-                                send_message(websocket_sender, login_failure_message).await
+                                send_message_raw(websocket_sender, login_failure_message).await
                             {
                                 tracing::warn!(?err, "Failed to send websocket login failure message");
                             }
@@ -43,7 +43,7 @@ pub async fn handle_websocket_login(
                     let login_failure_message = SignalingMessage::LoginFailure {
                         reason: LoginFailureReason::Unauthorized,
                     };
-                    if let Err(err) = send_message(websocket_sender, login_failure_message).await {
+                    if let Err(err) = send_message_raw(websocket_sender, login_failure_message).await {
                         tracing::warn!(?err, "Failed to send websocket login failure message");
                     }
                     None
@@ -70,7 +70,7 @@ pub async fn handle_websocket_login(
             let login_timeout_message = SignalingMessage::LoginFailure {
                 reason: LoginFailureReason::Timeout,
             };
-            if let Err(err) = send_message(websocket_sender, login_timeout_message).await {
+            if let Err(err) = send_message_raw(websocket_sender, login_timeout_message).await {
                 tracing::warn!(?err, "Failed to send websocket login timeout message");
             }
             None

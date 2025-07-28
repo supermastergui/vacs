@@ -1,15 +1,16 @@
 use crate::state::AppState;
 use crate::ws::ClientSession;
 use crate::ws::message::send_message;
-use crate::ws::traits::WebSocketSink;
 use std::ops::ControlFlow;
 use std::sync::Arc;
+use axum::extract::ws;
+use tokio::sync::mpsc;
 use vacs_protocol::ws::SignalingMessage;
 
-pub async fn handle_application_message<T: WebSocketSink>(
+pub async fn handle_application_message(
     state: &Arc<AppState>,
     client: &ClientSession,
-    websocket_tx: &mut T,
+    ws_outbound_tx: &mpsc::Sender<ws::Message>,
     message: SignalingMessage,
 ) -> ControlFlow<(), ()> {
     tracing::trace!(?message, "Handling application message");
@@ -19,7 +20,7 @@ pub async fn handle_application_message<T: WebSocketSink>(
             tracing::trace!("Returning list of clients");
             let clients = state.list_clients_without_self(client.get_id()).await;
             if let Err(err) =
-                send_message(websocket_tx, SignalingMessage::ClientList { clients }).await
+                send_message(ws_outbound_tx, SignalingMessage::ClientList { clients }).await
             {
                 tracing::warn!(?err, "Failed to send client list");
             }

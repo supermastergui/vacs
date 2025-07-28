@@ -1,7 +1,7 @@
 use crate::ws::traits::{WebSocketSink, WebSocketStream};
 use axum::extract::ws;
-use futures_util::SinkExt;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::mpsc;
 use vacs_protocol::ws::SignalingMessage;
 
 /// Represents the outcome of [`receive_message`], indicating whether the message received should be handled, skipped or receiving errored.
@@ -31,7 +31,20 @@ impl PartialEq for MessageResult {
     }
 }
 
-pub async fn send_message<T: WebSocketSink>(
+pub async fn send_message(
+    ws_outbound_tx: &mpsc::Sender<ws::Message>,
+    message: SignalingMessage,
+) -> anyhow::Result<()> {
+    let serialized_message = SignalingMessage::serialize(&message)
+        .map_err(|e| anyhow::anyhow!(e).context("Failed to serialize message"))?;
+    ws_outbound_tx
+        .send(ws::Message::from(serialized_message))
+        .await
+        .map_err(|e| anyhow::anyhow!(e).context("Failed to send message"))?;
+    Ok(())
+}
+
+pub async fn send_message_raw<T: WebSocketSink>(
     websocket_tx: &mut T,
     message: SignalingMessage,
 ) -> anyhow::Result<()> {
@@ -87,7 +100,7 @@ mod tests {
     use vacs_protocol::ws::ClientInfo;
 
     #[test(tokio::test)]
-    async fn send_single_message() {
+    async fn send_single_message_raw() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut mock_sink = MockSink::new(tx);
 
@@ -98,7 +111,7 @@ mod tests {
             },
         };
 
-        assert!(send_message(&mut mock_sink, message.clone()).await.is_ok());
+        assert!(send_message_raw(&mut mock_sink, message.clone()).await.is_ok());
 
         if let Some(sent_message) = rx.recv().await {
             if let ws::Message::Text(serialized_message) = sent_message {
@@ -114,7 +127,7 @@ mod tests {
     }
 
     #[test(tokio::test)]
-    async fn send_multiple_messages() {
+    async fn send_multiple_messages_raw() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut mock_sink = MockSink::new(tx);
 
@@ -126,7 +139,7 @@ mod tests {
             SignalingMessage::Logout,
         ];
         for message in &messages {
-            assert!(send_message(&mut mock_sink, message.clone()).await.is_ok());
+            assert!(send_message_raw(&mut mock_sink, message.clone()).await.is_ok());
         }
 
         for expected in messages {
@@ -143,7 +156,7 @@ mod tests {
     }
 
     #[test(tokio::test)]
-    async fn send_messages_concurrently() {
+    async fn send_messages_concurrently_raw() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mock_sink = Arc::new(Mutex::new(MockSink::new(tx)));
 
@@ -161,7 +174,7 @@ mod tests {
             let message = message.clone();
             let task = tokio::spawn(async move {
                 let mut mock_sink = mock_sink.lock().await;
-                send_message(&mut *mock_sink, message.clone()).await
+                send_message_raw(&mut *mock_sink, message.clone()).await
             });
             tasks.push(task);
         }
@@ -189,7 +202,7 @@ mod tests {
     }
 
     #[test(tokio::test)]
-    async fn send_message_sink_disconnected() {
+    async fn send_message_sink_disconnected_raw() {
         let (tx, rx) = mpsc::unbounded_channel();
         drop(rx); // Drop the receiver to simulate the sink being disconnected.
         let mut mock_sink = MockSink::new(tx);
@@ -202,7 +215,7 @@ mod tests {
         };
 
         assert!(
-            send_message(&mut mock_sink, message.clone())
+            send_message_raw(&mut mock_sink, message.clone())
                 .await
                 .is_err_and(|err| err.to_string().contains("Failed to send message"))
         );
