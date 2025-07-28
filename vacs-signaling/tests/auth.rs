@@ -38,7 +38,7 @@ async fn login() {
     let transport = transport::tokio::TokioTransport::new(test_app.addr())
         .await
         .expect("Failed to create transport");
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
+    let (_, shutdown_rx) = watch::channel(());
     let mut client = client::SignalingClient::builder(transport, shutdown_rx)
         .with_login_timeout(Duration::from_millis(100))
         .build();

@@ -3,7 +3,6 @@ use crate::config::BackendEndpoint;
 use crate::error::{Error, HandleUnauthorizedExt};
 use anyhow::Context;
 use serde_json::Value;
-use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use vacs_protocol::http::auth::{InitVatsimLogin, UserInfo};
 
@@ -59,7 +58,10 @@ pub async fn auth_check_session(app: AppHandle, app_state: State<'_, AppState>) 
 pub async fn auth_logout(app: AppHandle, app_state: State<'_, AppState>) -> Result<(), Error> {
     log::debug!("Logging out");
 
-    let state = app_state.lock().await;
+    let mut state = app_state.lock().await;
+
+    state.disconnect(&app).await?;
+
     state
         .http_post::<(), ()>(BackendEndpoint::Logout, None, None)
         .await

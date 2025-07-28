@@ -6,3 +6,8 @@ use tauri::{AppHandle, Manager};
 pub async fn signaling_connect(app: AppHandle) -> Result<(), Error> {
     app.state::<AppState>().lock().await.connect(&app).await
 }
+
+#[tauri::command]
+pub async fn signaling_disconnect(app: AppHandle) -> Result<(), Error> {
+    app.state::<AppState>().lock().await.disconnect(&app).await
+}

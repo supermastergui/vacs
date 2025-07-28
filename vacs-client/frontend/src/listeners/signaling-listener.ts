@@ -3,17 +3,26 @@ import {useSignalingStore} from "../stores/signaling-store.ts";
 import {ClientInfo} from "../types/client-info.ts";
 
 export function setupSignalingListeners() {
-    const { setConnected, setClients } = useSignalingStore.getState();
+    const { setConnected, setDisplayName, setClients } = useSignalingStore.getState();
 
     const unlistenFns: (Promise<UnlistenFn>)[] = [];
 
     const init = () => {
-        const unlisten1 = listen<ClientInfo[]>("signaling:client-list", (event) => {
+        const unlisten1 = listen<string>("signaling:connected", (event) => {
             setConnected(true);
+            setDisplayName(event.payload);
+        });
+
+        const unlisten2 = listen("signaling:disconnected", () => {
+            setConnected(false);
+            setDisplayName("");
+        });
+
+        const unlisten3 = listen<ClientInfo[]>("signaling:client-list", (event) => {
             setClients(event.payload);
         });
 
-        unlistenFns.push(unlisten1);
+        unlistenFns.push(unlisten1, unlisten2, unlisten3);
     };
 
     init();

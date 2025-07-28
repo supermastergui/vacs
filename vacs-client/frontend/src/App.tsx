@@ -40,7 +40,7 @@ function App() {
         <div className="h-screen flex flex-col">
             <div className="w-full h-12 bg-gray-300 flex flex-row border-gray-700 border-b">
                 <Clock/>
-                <InfoGrid displayName="N36 PLC"/>
+                <InfoGrid/>
             </div>
             <div className="w-full h-[calc(100%-3rem)] flex flex-col">
                 {/* Top Button Row */}

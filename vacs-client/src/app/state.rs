@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::time::Duration;
+use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 use url::Url;
@@ -76,6 +77,7 @@ impl AppStateInner {
             "Successfully connected to signaling server, {} clients connected",
             client_list.len()
         );
+        app.emit("signaling:connected", "LOVV_CTR").ok(); // TODO: Update display name
         app.emit("signaling:client-list", client_list).ok();
 
         self.connection = Some(connection);
@@ -83,12 +85,18 @@ impl AppStateInner {
         Ok(())
     }
 
-    pub async fn disconnect(&mut self) -> Result<(), Error> {
+    pub async fn disconnect(&mut self, app: &AppHandle) -> Result<(), Error> {
+        log::info!("Disconnecting from signaling server");
         if let Some(connection) = self.connection.as_mut() {
-            connection.disconnect().await?
+            connection.disconnect().await?;
+            self.connection = None;
+
+            app.emit("signaling:disconnected", Value::Null).ok();
         } else {
             log::warn!("Tried to disconnect from signaling server, but not connected");
         }
+
+        log::debug!("Successfully disconnected from signaling server");
         Ok(())
     }
 

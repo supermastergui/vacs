@@ -9,13 +9,22 @@ import {navigate} from "wouter/use-browser-location";
 import {useAuthStore} from "../stores/auth-store.ts";
 import {invokeStrict} from "../error.ts";
 import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
+import {useSignalingStore} from "../stores/signaling-store.ts";
 
 function SettingsPage() {
+    const connected = useSignalingStore(state => state.connected);
     const isAuthenticated = useAuthStore(state => state.status === "authenticated");
 
     const handleLogoutClick = useAsyncDebounce(async () => {
         try {
             await invokeStrict("auth_logout");
+            navigate("/");
+        } catch {}
+    });
+
+    const handleDisconnectClick = useAsyncDebounce(async () => {
+        try {
+            await invokeStrict("signaling_disconnect");
             navigate("/");
         } catch {}
     });
@@ -67,7 +76,10 @@ function SettingsPage() {
                 </div>
                 <div className="h-20 w-full flex flex-row gap-2 justify-between p-2 [&>button]:px-1 [&>button]:shrink-0">
                     <Button color="gray" className="rounded !text-base"><p>Side<br/>tones</p></Button>
-                    <Button color="red" className="rounded !text-base" disabled={!isAuthenticated} onClick={handleLogoutClick}>Logout</Button>
+                    <div className="h-full flex flex-row gap-2">
+                        <Button color="red" className="w-auto px-3 rounded !text-base" disabled={!connected} onClick={handleDisconnectClick}>Disconnect</Button>
+                        <Button color="red" className="rounded !text-base" disabled={!isAuthenticated} onClick={handleLogoutClick}>Logout</Button>
+                    </div>
                 </div>
             </div>
         </div>

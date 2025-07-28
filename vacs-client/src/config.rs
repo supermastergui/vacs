@@ -13,8 +13,8 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn parse() -> anyhow::Result<AppConfig> {
         Config::builder()
-            .set_default("backend.base_url", "http://localhost:3000")?
-            .set_default("backend.ws_url", "ws://localhost:3000/ws")?
+            .set_default("backend.base_url", "http://127.0.0.1:3000")?
+            .set_default("backend.ws_url", "ws://127.0.0.1:3000/ws")?
             .set_default("backend.endpoints.init_auth", "/auth/vatsim")?
             .set_default("backend.endpoints.exchange_code", "/auth/vatsim/callback")?
             .set_default("backend.endpoints.user_info", "/auth/user")?

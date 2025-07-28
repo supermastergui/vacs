@@ -1,6 +1,5 @@
 pub(crate) mod commands;
 
-use std::sync::Mutex;
 use crate::config::BackendEndpoint;
 use crate::error::Error;
 use crate::app::state::AppState;

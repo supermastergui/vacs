@@ -1,4 +1,3 @@
-// import {useState} from "preact/hooks";
 import {clsx} from "clsx";
 import {useSignalingStore} from "../../stores/signaling-store.ts";
 
@@ -12,9 +11,8 @@ const StatusColors: Record<Status, string> = {
 };
 
 function StatusIndicator() {
-    //const [status, _setStatus] = useState<Status>("yellow");
     const connected = useSignalingStore(state => state.connected);
-    const status = connected ? "green" : "red";
+    const status = connected ? "green" : "gray";
 
     return (
         <div className={clsx("h-full aspect-square rounded-full border", StatusColors[status])}></div>
