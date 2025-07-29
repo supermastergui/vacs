@@ -1,86 +1,119 @@
 pub(crate) mod commands;
 
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::watch;
+use tokio::sync::{Mutex, watch};
+use tokio::task::JoinSet;
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 use vacs_signaling::client::SignalingClient;
 use vacs_signaling::error::SignalingError;
-use vacs_signaling::transport;
-use crate::error::Error;
+use vacs_signaling::transport::tokio::TokioTransport;
 
 pub struct Connection {
-    client: SignalingClient<transport::tokio::TokioTransport>,
+    client: Arc<Mutex<SignalingClient<TokioTransport>>>,
     shutdown_tx: watch::Sender<()>,
-    shutdown_rx: watch::Receiver<()>,
+    tasks: JoinSet<()>,
 }
 
 impl Connection {
     pub async fn new(ws_url: &str) -> Result<Self, SignalingError> {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
-        let transport = transport::tokio::TokioTransport::new(ws_url).await?;
-        let client = SignalingClient::new(transport, shutdown_rx.clone());
+        let transport = TokioTransport::new(ws_url).await?;
+        let client = Arc::new(Mutex::new(SignalingClient::new(
+            transport,
+            shutdown_rx,
+        )));
 
         Ok(Self {
             client,
             shutdown_tx,
-            shutdown_rx,
+            tasks: JoinSet::new(),
         })
     }
 
-    pub async fn login(&mut self, token: &str)  -> Result<Vec<ClientInfo>, SignalingError> {
-        self.client.login(token).await
+    pub async fn login(&mut self, token: &str) -> Result<Vec<ClientInfo>, SignalingError> {
+        self.client.lock().await.login(token).await
     }
 
-    pub async fn disconnect(&mut self) -> Result<(), Error> {
-        self.shutdown_tx.send(()).map_err(|err| Error::Other(anyhow::anyhow!(err)))?;
-        self.client.disconnect().await?;
-        Ok(())
-    }
+    pub async fn start(&mut self, app: AppHandle) {
+        let client = self.client.clone();
+        let mut broadcast_rx = client.lock().await.subscribe();
+        
+        self.tasks.spawn(async move {
+            log::trace!("Signaling client interaction task started");
 
-    pub fn subscribe(&self) -> (Receiver<SignalingMessage>, watch::Receiver<()>)  {
-        (self.client.subscribe(), self.shutdown_rx.clone())
-    }
+            let mut client = client.lock().await;
+            client.handle_interaction().await;
 
-    pub async fn handle_interaction(mut broadcast_rx: Receiver<SignalingMessage>, mut shutdown_rx: watch::Receiver<()>, app: &AppHandle) -> Result<(), Error> {
-        loop {
-            tokio::select! {
-                biased;
+            log::trace!("Signaling client interaction task finished");
+        });
 
-                _ = shutdown_rx.changed() => {
-                    log::debug!("Shutdown signal received, aborting interaction handling");
-                    break;
-                }
+        let mut shutdown_rx = self.shutdown_tx.subscribe();
+        self.tasks.spawn(async move {
+            log::trace!("Signaling connection interaction task started");
 
-                msg = broadcast_rx.recv() => {
-                    log::trace!("Received message: {:?}", msg);
-                    match msg {
-                        Ok(msg) => {
-                            match msg {
-                                SignalingMessage::CallOffer { .. } => {}
-                                SignalingMessage::CallEnd { .. } => {}
-                                SignalingMessage::CallIceCandidate { .. } => {}
-                                SignalingMessage::ClientConnected { client } => {
-                                    log::trace!("Client connected: {:?}", client);
-                                    app.emit("signaling:client-connected", client).ok();
-                                }
-                                SignalingMessage::ClientDisconnected { id } => {
-                                    log::trace!("Client disconnected: {:?}", id);
-                                    app.emit("signaling:client-disconnected", id).ok();
-                                }
-                                SignalingMessage::Error { .. } => {}
-                                _ => {}
+            loop {
+                tokio::select! {
+                    biased;
+
+                    _ = shutdown_rx.changed() => {
+                        log::info!("Shutdown signal received, stopping signaling connection handling");
+                        break;
+                    }
+
+                    msg = broadcast_rx.recv() => {
+                        match msg {
+                            Ok(msg) => Self::handle_signaling_message(msg, &app),
+                            Err(err) => {
+                                log::warn!("Received error from signaling client broadcast receiver: {err:?}");
+                                break;
                             }
-                        },
-                        Err(_) => {
-                            return Err(Error::Signaling(SignalingError::Disconnected));
                         }
                     }
                 }
             }
-        }
 
-        log::debug!("Interaction handling complete");
-        Ok(())
+            log::trace!("Signaling connection interaction task finished");
+        });
+    }
+
+    pub async fn stop(&mut self) {
+        log::info!("Stopping signaling connection");
+        self.shutdown();
+        while let Some(res) = self.tasks.join_next().await {
+            if let Err(err) = res {
+                log::warn!("Task join error while stopping signaling connection: {err:?}")
+            }
+        }
+    }
+
+    pub fn shutdown(&self) {
+        log::trace!("Shutdown requested for signaling connection");
+        let _ = self.shutdown_tx.send(());
+    }
+
+    fn handle_signaling_message(msg: SignalingMessage, app: &AppHandle) {
+        match msg {
+            SignalingMessage::CallOffer { .. } => {}
+            SignalingMessage::CallEnd { .. } => {}
+            SignalingMessage::CallIceCandidate { .. } => {}
+            SignalingMessage::ClientConnected { client } => {
+                log::trace!("Client connected: {client:?}");
+                app.emit("signaling:client-connected", client).ok();
+            }
+            SignalingMessage::ClientDisconnected { id } => {
+                log::trace!("Client disconnected: {id:?}");
+                app.emit("signaling:client-disconnected", id).ok();
+            }
+            SignalingMessage::Error { .. } => {}
+            _ => {}
+        }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        log::debug!("Signaling connection dropped, sending shutdown signal");
+        self.shutdown();
     }
 }

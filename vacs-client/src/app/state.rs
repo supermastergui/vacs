@@ -17,7 +17,7 @@ use vacs_protocol::http::ws::WebSocketToken;
 
 pub struct AppStateInner {
     pub config: AppConfig,
-    connection: Option<signaling::Connection>,
+    connection: Option<Connection>,
     pub http_client: reqwest::Client,
     cookie_store: Arc<SecureCookieStore>,
 }
@@ -56,12 +56,18 @@ impl AppStateInner {
             .context("Failed to clear cookie store")
     }
 
-    pub fn get_connection(&self) -> Option<&signaling::Connection> {
+    pub fn get_connection(&self) -> Option<&Connection> {
         self.connection.as_ref()
     }
 
     pub async fn connect(&mut self, app: &AppHandle) -> Result<(), Error> {
         log::info!("Connecting to signaling server");
+
+        if self.connection.is_some() {
+            log::info!("Already connected to signaling server");
+            return Ok(());
+        }
+
         log::debug!("Retrieving WebSocket auth token");
         let token = self
             .http_get::<WebSocketToken>(BackendEndpoint::WsToken, None)
@@ -69,8 +75,7 @@ impl AppStateInner {
             .token;
 
         log::debug!("Establishing signaling connection");
-        let mut connection =
-            Connection::new(self.config.backend.ws_url.as_str()).await?;
+        let mut connection = Connection::new(self.config.backend.ws_url.as_str()).await?;
 
         log::debug!("Logging in to signaling server");
         let client_list = connection.login(token.as_str()).await?;
@@ -82,19 +87,8 @@ impl AppStateInner {
         app.emit("signaling:connected", "LOVV_CTR").ok(); // TODO: Update display name
         app.emit("signaling:client-list", client_list).ok();
 
-        let (broadcast_rx, shutdown_rx) = connection.subscribe();
-        let app_clone = app.clone();
+        connection.start(app.clone()).await;
         self.connection = Some(connection);
-
-        log::debug!("Starting signaling handling interaction thread");
-        tokio::spawn(async move {
-            if let Err(err) =
-                Connection::handle_interaction(broadcast_rx, shutdown_rx, &app_clone).await
-            {
-                log::error!("Signaling interaction failed: {}", err);
-                app_clone.emit::<FrontendError>("error", err.into()).ok();
-            }
-        });
 
         Ok(())
     }
@@ -102,7 +96,7 @@ impl AppStateInner {
     pub async fn disconnect(&mut self, app: &AppHandle) -> Result<(), Error> {
         log::info!("Disconnecting from signaling server");
         if let Some(connection) = self.connection.as_mut() {
-            connection.disconnect().await?;
+            connection.stop().await;
             self.connection = None;
 
             app.emit("signaling:disconnected", Value::Null).ok();
