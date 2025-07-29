@@ -12,11 +12,29 @@ pub enum Error {
     #[error("Network error: {0}")]
     Network(String),
     #[error("Signaling error: {0}")]
-    Signaling(#[from] vacs_signaling::error::SignalingError),
+    Signaling(#[from] Box<vacs_signaling::error::SignalingError>),
     #[error("HTTP error: {0}")]
-    Reqwest(#[from] reqwest::Error),
+    Reqwest(#[from] Box<reqwest::Error>),
     #[error(transparent)]
-    Other(#[from] anyhow::Error),
+    Other(#[from] Box<anyhow::Error>),
+}
+
+impl From<vacs_signaling::error::SignalingError> for Error {
+    fn from(err: vacs_signaling::error::SignalingError) -> Self {
+        Error::Signaling(Box::new(err))
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::Reqwest(Box::new(err))
+    }
+}
+
+impl From<anyhow::Error> for Error {
+    fn from(err: anyhow::Error) -> Self {
+        Error::Other(Box::new(err))
+    }
 }
 
 impl serde::Serialize for Error {
@@ -56,7 +74,7 @@ impl<R> LogErrExt<R> for Result<R, Error> {
         match self {
             Ok(val) => Ok(val),
             Err(err) => {
-                log::error!("{:?}", err);
+                log::error!("{err:?}");
                 Err(err)
             }
         }

@@ -1,7 +1,6 @@
 use crate::config::{APP_USER_AGENT, AppConfig, BackendEndpoint};
-use crate::error::{Error, FrontendError};
+use crate::error::Error;
 use crate::secrets::cookies::SecureCookieStore;
-use crate::signaling;
 use crate::signaling::Connection;
 use anyhow::Context;
 use reqwest::StatusCode;
@@ -199,7 +198,7 @@ fn map_reqwest_error(err: reqwest::Error) -> Error {
     if err.is_timeout() || err.is_connect() {
         return Error::Network(err.to_string());
     }
-    Error::Reqwest(err)
+    Error::Reqwest(Box::from(err))
 }
 
 fn map_reqwest_status_code(err: reqwest::Error) -> Error {
@@ -210,9 +209,9 @@ fn map_reqwest_status_code(err: reqwest::Error) -> Error {
         );
         match status {
             StatusCode::UNAUTHORIZED => Error::Unauthorized,
-            _ => Error::Reqwest(err),
+            _ => Error::Reqwest(Box::from(err)),
         }
     } else {
-        Error::Reqwest(err)
+        Error::Reqwest(Box::from(err))
     }
 }
