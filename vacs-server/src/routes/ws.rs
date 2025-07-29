@@ -4,19 +4,19 @@ use crate::state::AppState;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
-use axum::routing::get;
+use axum::routing::{delete, get};
 use axum_login::login_required;
 use std::sync::Arc;
+use crate::auth::users::AuthSession;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/token", get(get::token))
-        .route_layer(login_required!(Backend))
+        .route("/token", get(get::token).layer(login_required!(Backend)))
+        .route("/", delete(delete::terminate_connection).layer(login_required!(Backend)))
 }
 
 mod get {
     use super::*;
-    use crate::auth::users::AuthSession;
     use vacs_protocol::http::ws::WebSocketToken;
 
     pub async fn token(
@@ -29,5 +29,23 @@ mod get {
         let token = state.generate_ws_auth_token(user.cid.as_str()).await?;
 
         Ok(Json(WebSocketToken { token }))
+    }
+}
+
+mod delete {
+    use axum::http::StatusCode;
+    use crate::http::StatusCodeResult;
+    use super::*;
+
+    pub async fn terminate_connection(
+        auth_session: AuthSession,
+        State(state): State<Arc<AppState>>,
+    ) -> StatusCodeResult {
+        let user = auth_session.user.expect("User not logged in");
+
+        tracing::debug!(?user, "Terminating existing web socket connection");
+        state.unregister_client(user.cid.as_str()).await;
+
+        Ok(StatusCode::NO_CONTENT)
     }
 }

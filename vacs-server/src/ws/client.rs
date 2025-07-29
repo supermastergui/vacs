@@ -17,11 +17,17 @@ use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 pub struct ClientSession {
     client_info: ClientInfo,
     tx: mpsc::Sender<SignalingMessage>,
+    client_shutdown_tx: watch::Sender<()>,
 }
 
 impl ClientSession {
     pub fn new(client_info: ClientInfo, tx: mpsc::Sender<SignalingMessage>) -> Self {
-        Self { client_info, tx }
+        let (client_shutdown_tx, _) = watch::channel(());
+        Self {
+            client_info,
+            tx,
+            client_shutdown_tx,
+        }
     }
 
     pub fn get_id(&self) -> &str {
@@ -30,6 +36,12 @@ impl ClientSession {
 
     pub fn get_client_info(&self) -> &ClientInfo {
         &self.client_info
+    }
+
+    #[instrument(level = "debug", skip(self))]
+    pub fn disconnect(&self) {
+        tracing::trace!("Disconnecting client");
+        let _ = self.client_shutdown_tx.send(());
     }
 
     pub async fn send_message(&self, message: SignalingMessage) -> anyhow::Result<()> {
@@ -48,7 +60,7 @@ impl ClientSession {
         websocket_tx: T,
         broadcast_rx: &mut broadcast::Receiver<SignalingMessage>,
         rx: &mut mpsc::Receiver<SignalingMessage>,
-        shutdown_rx: &mut watch::Receiver<()>,
+        app_shutdown_rx: &mut watch::Receiver<()>,
         client_id: &str,
     ) {
         tracing::debug!("Starting to handle client interaction");
@@ -56,9 +68,9 @@ impl ClientSession {
         let (pong_update_tx, pong_update_rx) = watch::channel(Instant::now());
 
         let (writer_handle, ws_outbound_tx) =
-            ClientSession::spawn_writer(websocket_tx, shutdown_rx.clone()).await;
+            ClientSession::spawn_writer(websocket_tx, app_shutdown_rx.clone(), self.client_shutdown_tx.subscribe()).await;
         let (reader_handle, mut ws_inbound_rx) =
-            ClientSession::spawn_reader(websocket_rx, shutdown_rx.clone(), pong_update_tx).await;
+            ClientSession::spawn_reader(websocket_rx, app_shutdown_rx.clone(), self.client_shutdown_tx.subscribe(), pong_update_tx).await;
         let (ping_handle, mut ping_shutdown_rx) =
             ClientSession::spawn_ping_task(&ws_outbound_tx, pong_update_rx);
 
@@ -74,7 +86,7 @@ impl ClientSession {
             tokio::select! {
                 biased;
 
-                _ = shutdown_rx.changed() => {
+                _ = app_shutdown_rx.changed() => {
                     tracing::trace!("Shutdown signal received, disconnecting client");
                     break;
                 }
@@ -143,7 +155,8 @@ impl ClientSession {
     #[instrument(level = "debug", skip_all)]
     pub async fn spawn_writer<T: WebSocketSink + 'static>(
         mut websocket_tx: T,
-        mut shutdown_rx: watch::Receiver<()>,
+        mut app_shutdown_rx: watch::Receiver<()>,
+        mut client_shutdown_rx: watch::Receiver<()>,
     ) -> (JoinHandle<()>, mpsc::Sender<ws::Message>) {
         let (ws_outbound_tx, mut ws_outbound_rx) =
             mpsc::channel::<ws::Message>(config::CLIENT_WEBSOCKET_TASK_CHANNEL_CAPACITY);
@@ -156,8 +169,13 @@ impl ClientSession {
                 tokio::select! {
                     biased;
 
-                    _ = shutdown_rx.changed() => {
-                        tracing::trace!("Shutdown signal received, stopping WebSocket reader task");
+                    _ = app_shutdown_rx.changed() => {
+                        tracing::trace!("App shutdown signal received, stopping WebSocket reader task");
+                        break;
+                    }
+                    
+                    _ = client_shutdown_rx.changed() => {
+                        tracing::trace!("Client shutdown signal received, stopping WebSocket reader task");
                         break;
                     }
 
@@ -193,7 +211,8 @@ impl ClientSession {
     #[instrument(level = "debug", skip_all)]
     pub async fn spawn_reader<R: WebSocketStream + 'static>(
         mut websocket_rx: R,
-        mut shutdown_rx: watch::Receiver<()>,
+        mut app_shutdown_rx: watch::Receiver<()>,
+        mut client_shutdown_rx: watch::Receiver<()>,
         pong_update_tx: watch::Sender<Instant>,
     ) -> (JoinHandle<()>, mpsc::Receiver<SignalingMessage>) {
         let (ws_inbound_tx, ws_inbound_rx) =
@@ -207,8 +226,13 @@ impl ClientSession {
                 tokio::select! {
                     biased;
 
-                    _ = shutdown_rx.changed() => {
-                        tracing::trace!("Shutdown signal received, stopping WebSocket reader task");
+                    _ = app_shutdown_rx.changed() => {
+                        tracing::trace!("App shutdown signal received, stopping WebSocket reader task");
+                        break;
+                    }
+                    
+                    _ = client_shutdown_rx.changed() => {
+                        tracing::trace!("Client shutdown signal received, stopping WebSocket reader task");
                         break;
                     }
 

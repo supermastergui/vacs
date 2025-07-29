@@ -79,13 +79,15 @@ impl AppState {
         Ok((client, rx))
     }
 
+    #[instrument(level = "debug", skip(self))]
     pub async fn unregister_client(&self, client_id: &str) {
         tracing::trace!("Unregistering client");
 
-        if self.clients.write().await.remove(client_id).is_none() {
+        let Some(client) = self.clients.write().await.remove(client_id) else {
             tracing::debug!("Client not found in client list, skipping unregister");
             return;
-        }
+        };
+        client.disconnect();
 
         if self.broadcast_tx.receiver_count() > 1 {
             tracing::trace!("Broadcasting client disconnected message");
@@ -121,7 +123,11 @@ impl AppState {
     }
 
     pub async fn list_clients_without_self(&self, self_client_id: &str) -> Vec<ClientInfo> {
-        self.list_clients().await.into_iter().filter(|c| c.id != self_client_id).collect()
+        self.list_clients()
+            .await
+            .into_iter()
+            .filter(|c| c.id != self_client_id)
+            .collect()
     }
 
     pub async fn get_client(&self, client_id: &str) -> Option<ClientSession> {
