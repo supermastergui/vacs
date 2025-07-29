@@ -1,5 +1,5 @@
 use crate::config::{APP_USER_AGENT, AppConfig, BackendEndpoint};
-use crate::error::Error;
+use crate::error::{Error, FrontendError};
 use crate::secrets::cookies::SecureCookieStore;
 use crate::signaling::Connection;
 use anyhow::Context;
@@ -88,9 +88,9 @@ impl AppStateInner {
 
         let (on_disconnect_tx, on_disconnect_rx) = oneshot::channel();
         connection.start(app.clone(), on_disconnect_tx).await;
-        
+
         self.connection = Some(connection);
-        
+
         let app_clone = app.clone();
         tokio::spawn(async move {
             if on_disconnect_rx.await.is_ok() {
@@ -105,7 +105,7 @@ impl AppStateInner {
 
     pub async fn disconnect(&mut self, app: &AppHandle) {
         log::info!("Disconnecting from signaling server");
-        
+
         let connection = self.connection.take();
         if let Some(mut connection) = connection {
             connection.stop().await;
@@ -115,12 +115,13 @@ impl AppStateInner {
             log::info!("Tried to disconnection from signaling server, but not connected");
         }
     }
-    
+
     pub async fn handle_connection_closed(&mut self, app: &AppHandle) {
         log::info!("Handling closed signaling server connection");
-        
+
         if self.connection.take().is_some() {
             app.emit("signaling:disconnected", Value::Null).ok();
+            app.emit::<FrontendError>("error", Error::Network("Disconnected from websocket connection".to_string()).into()).ok();
             log::debug!("Successfully handled closed signaling server connection");
         } else {
             log::info!("Not connected to signaling server, nothing to handle");

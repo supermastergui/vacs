@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, watch, oneshot};
 use tokio::task::JoinSet;
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
-use vacs_signaling::client::SignalingClient;
+use vacs_signaling::client::{InterruptionReason, SignalingClient};
 use vacs_signaling::error::SignalingError;
 use vacs_signaling::transport::tokio::TokioTransport;
 
@@ -40,9 +40,19 @@ impl Connection {
             log::trace!("Signaling client interaction task started");
 
             let mut client = client.lock().await;
-            client.handle_interaction().await;
-
-            let _ = on_disconnect.send(());
+            let reason = client.handle_interaction().await;
+            match reason {
+                InterruptionReason::Disconnected => {
+                    log::debug!("Signaling client interaction ended due to disconnect, emitting event");
+                    on_disconnect.send(()).ok();
+                },
+                InterruptionReason::ShutdownSignal => {
+                    log::trace!("Signaling client interaction ended due to shutdown signal, not emitting further");
+                },
+                InterruptionReason::Error(err) => {
+                    log::warn!("Signaling client interaction ended due to error: {err:?}");
+                },
+            };
 
             log::trace!("Signaling client interaction task finished");
         });
@@ -80,7 +90,6 @@ impl Connection {
         log::info!("Stopping signaling connection");
         self.shutdown();
         while let Some(res) = self.tasks.join_next().await {
-            log::trace!("Signaling connection task joined: {res:?}");
             if let Err(err) = res {
                 log::warn!("Task join error while stopping signaling connection: {err:?}")
             }

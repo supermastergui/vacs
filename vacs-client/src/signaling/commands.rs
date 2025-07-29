@@ -1,7 +1,6 @@
-use serde_json::Value;
 use crate::app::state::AppState;
 use crate::error::{Error, HandleUnauthorizedExt};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use crate::config::BackendEndpoint;
 
 #[tauri::command]
@@ -30,7 +29,5 @@ pub async fn signaling_terminate(app: AppHandle, app_state: State<'_, AppState>)
         .handle_unauthorized(&app)?;
 
     log::info!("Successfully terminated signaling server session");
-    app.emit("signaling:terminated", Value::Null).ok();
-
     Ok(())
 }

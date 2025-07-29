@@ -199,7 +199,7 @@ impl<T: SignalingTransport> SignalingClient<T> {
     }
 
     #[instrument(level = "info", skip(self))]
-    pub async fn handle_interaction(&mut self) {
+    pub async fn handle_interaction(&mut self) -> InterruptionReason {
         tracing::debug!("Handling interaction");
 
         loop {
@@ -208,7 +208,7 @@ impl<T: SignalingTransport> SignalingClient<T> {
 
                 _ = self.shutdown_rx.changed() => {
                     tracing::debug!("Shutdown signal received, aborting interaction handling");
-                    break;
+                    return InterruptionReason::ShutdownSignal;
                 }
 
                 msg = self.transport.recv() => {
@@ -227,14 +227,14 @@ impl<T: SignalingTransport> SignalingClient<T> {
                             }
                         }
                         Err(err) => {
-                            match err {
+                            return match err {
                                 SignalingError::Disconnected => {
                                     tracing::debug!("Transport disconnected, aborting interaction handling");
-                                    break;
+                                    InterruptionReason::Disconnected
                                 }
                                 err => {
                                     tracing::warn!(?err, "Received error from transport, continuing");
-                                    continue;
+                                    InterruptionReason::Error(err)
                                 }
                             }
                         }
@@ -242,9 +242,13 @@ impl<T: SignalingTransport> SignalingClient<T> {
                 }
             }
         }
-
-        tracing::debug!("Interaction handling complete");
     }
+}
+
+pub enum InterruptionReason {
+    ShutdownSignal,
+    Disconnected,
+    Error(SignalingError),
 }
 
 #[cfg(test)]
