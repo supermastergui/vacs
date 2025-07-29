@@ -7,9 +7,10 @@ use axum::extract::ws;
 use futures_util::SinkExt;
 use std::ops::ControlFlow;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use tracing::{instrument, Instrument};
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
+use tracing::{Instrument, instrument};
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
 #[derive(Clone)]
@@ -52,11 +53,14 @@ impl ClientSession {
     ) {
         tracing::debug!("Starting to handle client interaction");
 
-        let ws_outbound_tx = ClientSession::spawn_writer(websocket_tx, shutdown_rx.clone()).await;
-        let mut ws_inbound_rx = ClientSession::spawn_reader(websocket_rx, shutdown_rx.clone()).await;
-        let mut ping_shutdown_rx =
-            ClientSession::spawn_ping_task(&ws_outbound_tx, config::CLIENT_WEBSOCKET_PING_INTERVAL)
-                .await;
+        let (pong_update_tx, pong_update_rx) = watch::channel(Instant::now());
+
+        let (writer_handle, ws_outbound_tx) =
+            ClientSession::spawn_writer(websocket_tx, shutdown_rx.clone()).await;
+        let (reader_handle, mut ws_inbound_rx) =
+            ClientSession::spawn_reader(websocket_rx, shutdown_rx.clone(), pong_update_tx).await;
+        let (ping_handle, mut ping_shutdown_rx) =
+            ClientSession::spawn_ping_task(&ws_outbound_tx, pong_update_rx);
 
         tracing::trace!("Sending initial client list");
         let clients = app_state.list_clients_without_self(client_id).await;
@@ -129,6 +133,10 @@ impl ClientSession {
             }
         }
 
+        writer_handle.abort();
+        reader_handle.abort();
+        ping_handle.abort();
+
         tracing::debug!("Finished handling client interaction");
     }
 
@@ -136,12 +144,14 @@ impl ClientSession {
     pub async fn spawn_writer<T: WebSocketSink + 'static>(
         mut websocket_tx: T,
         mut shutdown_rx: watch::Receiver<()>,
-    ) -> mpsc::Sender<ws::Message> {
+    ) -> (JoinHandle<()>, mpsc::Sender<ws::Message>) {
         let (ws_outbound_tx, mut ws_outbound_rx) =
             mpsc::channel::<ws::Message>(config::CLIENT_WEBSOCKET_TASK_CHANNEL_CAPACITY);
 
-        tokio::spawn(async move {
+        let join_handle = tokio::spawn(async move {
             tracing::trace!("WebSocket writer task started");
+            let _guard = TaskDropLogger::new("writer");
+
             loop {
                 tokio::select! {
                     biased;
@@ -177,19 +187,22 @@ impl ClientSession {
         }
             .instrument(tracing::Span::current()));
 
-        ws_outbound_tx
+        (join_handle, ws_outbound_tx)
     }
 
     #[instrument(level = "debug", skip_all)]
     pub async fn spawn_reader<R: WebSocketStream + 'static>(
         mut websocket_rx: R,
         mut shutdown_rx: watch::Receiver<()>,
-    ) -> mpsc::Receiver<SignalingMessage> {
+        pong_update_tx: watch::Sender<Instant>,
+    ) -> (JoinHandle<()>, mpsc::Receiver<SignalingMessage>) {
         let (ws_inbound_tx, ws_inbound_rx) =
             mpsc::channel::<SignalingMessage>(config::CLIENT_WEBSOCKET_TASK_CHANNEL_CAPACITY);
 
-        tokio::spawn(async move {
+        let join_handle = tokio::spawn(async move {
             tracing::trace!("WebSocket reader task started");
+            let _guard = TaskDropLogger::new("reader");
+
             loop {
                 tokio::select! {
                     biased;
@@ -207,7 +220,12 @@ impl ClientSession {
                                     break;
                                 }
                             }
-                            MessageResult::ControlMessage => continue,
+                            MessageResult::ControlMessage => {
+                                if let Err(err) = pong_update_tx.send(Instant::now()) {
+                                    tracing::warn!(?err, "Failed to propagate last pong response, continuing");
+                                    continue;
+                                }
+                            },
                             MessageResult::Disconnected => {
                                 tracing::debug!("Client disconnected");
                                 break;
@@ -224,38 +242,65 @@ impl ClientSession {
         }
             .instrument(tracing::Span::current()));
 
-        ws_inbound_rx
+        (join_handle, ws_inbound_rx)
     }
 
-    #[instrument(level = "debug", skip(ws_outbound_tx))]
-    pub async fn spawn_ping_task(
+    #[instrument(level = "debug", skip_all)]
+    pub fn spawn_ping_task(
         ws_outbound_tx: &mpsc::Sender<ws::Message>,
-        interval_duration: Duration,
-    ) -> oneshot::Receiver<()> {
+        pong_update_rx: watch::Receiver<Instant>,
+    ) -> (JoinHandle<()>, oneshot::Receiver<()>) {
         let (ping_shutdown_tx, ping_shutdown_rx) = oneshot::channel();
 
         let ws_outbound_tx = ws_outbound_tx.clone();
-        tokio::spawn(async move {
-            tracing::trace!("WebSocket ping task started");
-            let mut interval = tokio::time::interval(interval_duration);
-            loop {
-                interval.tick().await;
+        let join_handle = tokio::spawn(
+            async move {
+                tracing::trace!("WebSocket ping task started");
+                let _guard = TaskDropLogger::new("ping");
 
-                tracing::trace!("Sending ping to client");
-                if let Err(err) = ws_outbound_tx
-                    .send(ws::Message::Ping(bytes::Bytes::new()))
-                    .await
-                {
-                    tracing::warn!(?err, "Failed to send ping to client");
-                    let _ = ping_shutdown_tx.send(());
-                    break;
+                let mut interval = tokio::time::interval(config::CLIENT_WEBSOCKET_PING_INTERVAL);
+                loop {
+                    interval.tick().await;
+
+                    if Instant::now().duration_since(*pong_update_rx.borrow())
+                        > config::CLIENT_WEBSOCKET_PONG_TIMEOUT
+                    {
+                        tracing::warn!("Pong timeout exceeded, disconnecting client");
+                        let _ = ping_shutdown_tx.send(());
+                        break;
+                    }
+
+                    if let Err(err) = ws_outbound_tx
+                        .send(ws::Message::Ping(bytes::Bytes::new()))
+                        .await
+                    {
+                        tracing::warn!(?err, "Failed to send ping to client");
+                        let _ = ping_shutdown_tx.send(());
+                        break;
+                    }
                 }
+                tracing::trace!("WebSocket ping task finished");
             }
-            tracing::trace!("WebSocket ping task finished");
-        }
-            .instrument(tracing::Span::current()));
+            .instrument(tracing::Span::current()),
+        );
 
-        ping_shutdown_rx
+        (join_handle, ping_shutdown_rx)
+    }
+}
+
+struct TaskDropLogger {
+    name: &'static str,
+}
+
+impl TaskDropLogger {
+    pub fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
+
+impl Drop for TaskDropLogger {
+    fn drop(&mut self) {
+        tracing::trace!(task_name = ?self.name, "Task dropped");
     }
 }
 
