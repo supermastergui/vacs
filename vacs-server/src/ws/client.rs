@@ -102,11 +102,11 @@ impl ClientSession {
                     }
                 }
 
-                message = rx.recv() => {
-                    match message {
-                        Some(message) => {
+                msg = rx.recv() => {
+                    match msg {
+                        Some(msg) => {
                             tracing::trace!("Received direct message");
-                            if let Err(err) = send_message(&ws_outbound_tx, message).await {
+                            if let Err(err) = send_message(&ws_outbound_tx, msg).await {
                                 tracing::warn!(?err, "Failed to send direct message");
                             }
                         }
@@ -117,11 +117,11 @@ impl ClientSession {
                     }
                 }
 
-                message = broadcast_rx.recv() => {
-                    match message {
-                        Ok(message) => {
+                msg = broadcast_rx.recv() => {
+                    match msg {
+                        Ok(msg) => {
                             tracing::trace!("Received broadcast message");
-                            if let Err(err) = send_message(&ws_outbound_tx, message).await {
+                            if let Err(err) = send_message(&ws_outbound_tx, msg).await {
                                 tracing::warn!(?err, "Failed to send broadcast message");
                             }
                         }
@@ -377,7 +377,7 @@ mod tests {
 
         let handle_task = setup.spawn_session_handle_interaction("client1".to_string());
 
-        let message = websocket_rx.lock().unwrap().recv().await;
+        let message = websocket_rx.lock().await.recv().await;
         match message {
             Some(ws::Message::Text(text)) => {
                 assert_eq!(
@@ -400,7 +400,7 @@ mod tests {
 
         let handle_task = setup.spawn_session_handle_interaction("client2".to_string());
 
-        let message = websocket_rx.lock().unwrap().recv().await;
+        let message = websocket_rx.lock().await.recv().await;
         match message {
             Some(ws::Message::Text(text)) => {
                 assert_eq!(
@@ -426,7 +426,7 @@ mod tests {
 
         let handle_task = setup.spawn_session_handle_interaction("client1".to_string());
 
-        let message = websocket_rx.lock().unwrap().recv().await;
+        let message = websocket_rx.lock().await.recv().await;
         match message {
             Some(ws::Message::Text(text)) => {
                 assert_eq!(
@@ -458,7 +458,7 @@ mod tests {
 
         let handle_task = setup.spawn_session_handle_interaction("client1".to_string());
 
-        let message = websocket_rx.lock().unwrap().recv().await;
+        let message = websocket_rx.lock().await.recv().await;
         match message {
             Some(ws::Message::Text(text)) => {
                 assert_eq!(
@@ -469,7 +469,7 @@ mod tests {
             _ => panic!("Expected client list message"),
         }
 
-        assert!(websocket_rx.lock().unwrap().is_closed());
+        assert!(websocket_rx.lock().await.is_closed());
 
         handle_task.await.unwrap();
     }

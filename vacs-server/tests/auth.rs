@@ -81,7 +81,7 @@ async fn unauthorized_message_before_login() {
                 "Unexpected reason for LoginFailure"
             );
         }
-        _ => panic!("Unexpected response: {:?}", response),
+        _ => panic!("Unexpected response: {response:?}"),
     });
 }
 
@@ -129,10 +129,10 @@ async fn login_timeout() {
                 Ok(SignalingMessage::LoginFailure { reason }) => {
                     assert_eq!(reason, LoginFailureReason::Timeout)
                 }
-                _ => panic!("Unexpected response: {:?}", response),
+                _ => panic!("Unexpected response: {response:?}"),
             }
         }
-        other => panic!("Unexpected response: {:?}", other),
+        other => panic!("Unexpected response: {other:?}"),
     }
 }
 
@@ -153,7 +153,7 @@ async fn client_connected() {
             assert_eq!(client.id, "client2");
             assert_eq!(client.display_name, "client2");
         }
-        _ => panic!("Unexpected message: {:?}", message),
+        _ => panic!("Unexpected message: {message:?}"),
     });
 
     let client2 = clients.get_mut("client2").unwrap();
@@ -182,7 +182,7 @@ async fn client_disconnected() {
             assert_eq!(client.id, "client2");
             assert_eq!(client.display_name, "client2");
         }
-        _ => panic!("Unexpected message: {:?}", message),
+        _ => panic!("Unexpected message: {message:?}"),
     });
 
     client1.close().await;
@@ -191,7 +191,7 @@ async fn client_disconnected() {
     let client_disconnected = client2.recv_with_timeout(Duration::from_millis(100)).await;
     assert_message_matches(client_disconnected, |message| match message {
         SignalingMessage::ClientDisconnected { id } => assert_eq!(id, "client1"),
-        _ => panic!("Unexpected message: {:?}", message),
+        _ => panic!("Unexpected message: {message:?}"),
     });
 }
 
@@ -235,7 +235,7 @@ async fn logout() {
             assert_eq!(client.id, "client2");
             assert_eq!(client.display_name, "client2");
         }
-        _ => panic!("Unexpected message: {:?}", message),
+        _ => panic!("Unexpected message: {message:?}"),
     });
 
     client1.send(SignalingMessage::Logout).await.unwrap();
@@ -250,6 +250,6 @@ async fn logout() {
     let client_disconnected = client2.recv_with_timeout(Duration::from_millis(100)).await;
     assert_message_matches(client_disconnected, |message| match message {
         SignalingMessage::ClientDisconnected { id } => assert_eq!(id, "client1"),
-        _ => panic!("Unexpected message: {:?}", message),
+        _ => panic!("Unexpected message: {message:?}"),
     });
 }

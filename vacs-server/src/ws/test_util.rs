@@ -7,17 +7,17 @@ use axum::extract::ws;
 use futures_util::{Sink, Stream};
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch, Mutex};
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
 pub struct MockSink {
-    tx: mpsc::UnboundedSender<ws::Message>,
+    tx: mpsc::Sender<ws::Message>,
 }
 
 impl MockSink {
-    pub fn new(tx: mpsc::UnboundedSender<ws::Message>) -> Self {
+    pub fn new(tx: mpsc::Sender<ws::Message>) -> Self {
         Self { tx }
     }
 }
@@ -30,7 +30,7 @@ impl Sink<ws::Message> for MockSink {
     }
 
     fn start_send(self: Pin<&mut Self>, item: ws::Message) -> Result<(), Self::Error> {
-        self.tx.send(item).map_err(|e| axum::Error::new(e))
+        self.tx.try_send(item).map_err(axum::Error::new)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -67,9 +67,10 @@ impl Stream for MockStream {
 pub struct TestSetup {
     pub app_state: Arc<AppState>,
     pub session: ClientSession,
-    pub mock_sink: MockSink,
     pub mock_stream: MockStream,
-    pub websocket_rx: Arc<Mutex<mpsc::UnboundedReceiver<ws::Message>>>,
+    pub mock_sink: MockSink,
+    pub websocket_tx: Arc<Mutex<mpsc::Sender<ws::Message>>>,
+    pub websocket_rx: Arc<Mutex<mpsc::Receiver<ws::Message>>>,
     pub rx: mpsc::Receiver<SignalingMessage>,
     pub broadcast_rx: broadcast::Receiver<SignalingMessage>,
     pub shutdown_tx: watch::Sender<()>,
@@ -93,16 +94,17 @@ impl TestSetup {
         };
         let (tx, rx) = mpsc::channel(10);
         let session = ClientSession::new(client_info, tx);
-        let (websocket_tx, websocket_rx) = mpsc::unbounded_channel();
-        let mock_sink = MockSink::new(websocket_tx);
+        let (websocket_tx, websocket_rx) = mpsc::channel(100);
         let mock_stream = MockStream::new(vec![]);
+        let mock_sink = MockSink::new(websocket_tx.clone());
         let (_broadcast_tx, broadcast_rx) = broadcast::channel(10);
 
         Self {
             app_state,
             session,
-            mock_sink,
             mock_stream,
+            mock_sink,
+            websocket_tx: Arc::new(Mutex::new(websocket_tx)),
             websocket_rx: Arc::new(Mutex::new(websocket_rx)),
             rx,
             broadcast_rx,
@@ -140,12 +142,15 @@ impl TestSetup {
     pub async fn take_last_websocket_message(&mut self) -> Option<ws::Message> {
         self.websocket_rx
             .lock()
-            .expect("Failed to lock websocket receiver")
+            .await
             .recv()
             .await
     }
 
-    pub fn spawn_session_handle_interaction(mut self, client_id: String) -> tokio::task::JoinHandle<()> {
+    pub fn spawn_session_handle_interaction(
+        mut self,
+        client_id: String,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             self.session
                 .handle_interaction(

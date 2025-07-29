@@ -129,6 +129,7 @@ async fn handle_call_end(state: &AppState, client: &ClientSession, peer_id: &str
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Deref;
     use super::*;
     use crate::ws::test_util::TestSetup;
     use axum::extract::ws;
@@ -145,7 +146,7 @@ mod tests {
         let control_flow = handle_application_message(
             &setup.app_state,
             &setup.session,
-            &mut setup.mock_sink,
+            setup.websocket_tx.lock().await.deref(),
             SignalingMessage::ListClients,
         )
         .await;
@@ -172,7 +173,7 @@ mod tests {
         let control_flow = handle_application_message(
             &setup.app_state,
             &setup.session,
-            &mut setup.mock_sink,
+            setup.websocket_tx.lock().await.deref(),
             SignalingMessage::ListClients,
         )
             .await;
@@ -192,13 +193,13 @@ mod tests {
 
     #[test(tokio::test)]
     async fn handle_application_message_logout() {
-        let mut setup = TestSetup::new();
+        let setup = TestSetup::new();
         setup.register_client("client1").await;
 
         let control_flow = handle_application_message(
             &setup.app_state,
             &setup.session,
-            &mut setup.mock_sink,
+            setup.websocket_tx.lock().await.deref(),
             SignalingMessage::Logout,
         )
         .await;
@@ -207,13 +208,13 @@ mod tests {
 
     #[test(tokio::test)]
     async fn handle_application_message_call_offer() {
-        let mut setup = TestSetup::new();
+        let setup = TestSetup::new();
         let mut clients = setup.register_clients(vec!["client1", "client2"]).await;
 
         let control_flow = handle_application_message(
             &setup.app_state,
             &setup.session,
-            &mut setup.mock_sink,
+            setup.websocket_tx.lock().await.deref(),
             SignalingMessage::CallOffer {
                 peer_id: "client2".to_string(),
                 sdp: "sdp1".to_string(),
@@ -240,12 +241,12 @@ mod tests {
 
     #[test(tokio::test)]
     async fn handle_application_message_unknown() {
-        let mut setup = TestSetup::new();
+        let setup = TestSetup::new();
 
         let control_flow = handle_application_message(
             &setup.app_state,
             &setup.session,
-            &mut setup.mock_sink,
+            setup.websocket_tx.lock().await.deref(),
             SignalingMessage::LoginFailure {
                 reason: LoginFailureReason::DuplicateId,
             },

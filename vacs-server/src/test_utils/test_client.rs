@@ -90,9 +90,12 @@ impl TestClient {
     }
 
     pub async fn recv_with_timeout(&mut self, timeout: Duration) -> Option<SignalingMessage> {
-        match self.recv_raw_with_timeout(timeout).await {
-            Some(Message::Text(text)) => SignalingMessage::deserialize(&text).ok(),
-            _ => None,
+        loop {
+            match self.recv_raw_with_timeout(timeout).await {
+                Some(Message::Text(text)) => return SignalingMessage::deserialize(&text).ok(),
+                Some(Message::Ping(_)) => continue,
+                _ => return None,
+            }
         }
     }
 
@@ -193,11 +196,9 @@ pub async fn setup_test_clients(
 ) -> HashMap<String, TestClient> {
     let mut test_clients = HashMap::new();
     for (id, token) in clients {
-        let client = TestClient::new_with_login(addr, id, token, |clients| {
-            Ok(())
-        })
-        .await
-        .expect("Failed to create test client");
+        let client = TestClient::new_with_login(addr, id, token, |clients| Ok(()))
+            .await
+            .expect("Failed to create test client");
         test_clients.insert(client.id.clone(), client);
     }
     test_clients
@@ -211,9 +212,7 @@ pub async fn setup_n_test_clients(addr: &str, num_clients: usize) -> Vec<TestCli
             addr,
             &format!("client{n}"),
             &format!("token{n}"),
-            |clients| {
-                Ok(())
-            },
+            |clients| Ok(()),
         )
         .await
         .expect("Failed to create test client");

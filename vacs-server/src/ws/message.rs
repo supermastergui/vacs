@@ -101,7 +101,7 @@ mod tests {
 
     #[test(tokio::test)]
     async fn send_single_message_raw() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(100);
         let mut mock_sink = MockSink::new(tx);
 
         let message = SignalingMessage::ClientConnected {
@@ -128,7 +128,7 @@ mod tests {
 
     #[test(tokio::test)]
     async fn send_multiple_messages_raw() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(100);
         let mut mock_sink = MockSink::new(tx);
 
         let messages = vec![
@@ -157,7 +157,7 @@ mod tests {
 
     #[test(tokio::test)]
     async fn send_messages_concurrently_raw() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(100);
         let mock_sink = Arc::new(Mutex::new(MockSink::new(tx)));
 
         let messages = vec![
@@ -203,7 +203,7 @@ mod tests {
 
     #[test(tokio::test)]
     async fn send_message_sink_disconnected_raw() {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(100);
         drop(rx); // Drop the receiver to simulate the sink being disconnected.
         let mut mock_sink = MockSink::new(tx);
 

@@ -24,7 +24,7 @@ async fn client_connected() -> anyhow::Result<()> {
         );
 
         let expected_ids: Vec<_> = (i + 2..=client_count)
-            .map(|i| format!("client{}", i))
+            .map(|i| format!("client{i}"))
             .collect();
 
         for message in messages {
@@ -36,7 +36,7 @@ async fn client_connected() -> anyhow::Result<()> {
                     expected_ids
                 );
             } else {
-                panic!("Unexpected message: {:?}", message);
+                panic!("Unexpected message: {message:?}");
             }
         }
     }
@@ -74,7 +74,7 @@ async fn client_disconnected() -> anyhow::Result<()> {
         );
 
         let expected_ids: Vec<_> = (i + 2..=initial_client_count)
-            .map(|i| format!("client{}", i))
+            .map(|i| format!("client{i}"))
             .collect();
 
         for message in messages {
@@ -90,13 +90,13 @@ async fn client_disconnected() -> anyhow::Result<()> {
                 SignalingMessage::ClientDisconnected { id } => {
                     assert_eq!(
                         id,
-                        format!("client{}", initial_client_count),
+                        format!("client{initial_client_count}"),
                         "Unexpected client ID: {:?}",
                         id
                     );
                 }
                 message => {
-                    panic!("Unexpected message: {:?}", message);
+                    panic!("Unexpected message: {message:?}");
                 }
             }
         }
@@ -124,7 +124,7 @@ async fn client_dropped() -> anyhow::Result<()> {
         );
 
         let expected_ids: Vec<_> = (i + 2..=initial_client_count)
-            .map(|i| format!("client{}", i))
+            .map(|i| format!("client{i}"))
             .collect();
 
         for message in messages {
@@ -140,13 +140,13 @@ async fn client_dropped() -> anyhow::Result<()> {
                 SignalingMessage::ClientDisconnected { id } => {
                     assert_eq!(
                         id,
-                        format!("client{}", initial_client_count),
+                        format!("client{initial_client_count}"),
                         "Unexpected client ID: {:?}",
                         id
                     );
                 }
                 message => {
-                    panic!("Unexpected message: {:?}", message);
+                    panic!("Unexpected message: {message:?}");
                 }
             }
         }
