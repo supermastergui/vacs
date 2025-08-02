@@ -4,10 +4,10 @@ use crate::transport::{SignalingReceiver, SignalingSender};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{OnceCell, broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite;
-use tracing::instrument;
+use tracing::{Instrument, instrument};
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
 const BROADCAST_CHANNEL_SIZE: usize = 100;
@@ -17,19 +17,19 @@ const SEND_CHANNEL_SIZE: usize = 100;
 pub struct SignalingClient {
     matcher: ResponseMatcher,
     broadcast_tx: broadcast::Sender<SignalingMessage>,
-    send_tx: Option<mpsc::Sender<tungstenite::Message>>,
+    send_tx: Arc<OnceCell<mpsc::Sender<tungstenite::Message>>>,
     shutdown_rx: watch::Receiver<()>,
     disconnect_tx: watch::Sender<()>,
     is_logged_in: Arc<AtomicBool>,
 }
 
 impl SignalingClient {
-    #[instrument(level = "debug")]
+    #[instrument(level = "debug", skip_all)]
     pub fn new(shutdown_rx: watch::Receiver<()>) -> Self {
         Self {
             matcher: ResponseMatcher::new(),
             broadcast_tx: broadcast::channel(BROADCAST_CHANNEL_SIZE).0,
-            send_tx: None,
+            send_tx: Arc::new(OnceCell::new()),
             shutdown_rx,
             disconnect_tx: watch::channel(()).0,
             is_logged_in: Arc::new(AtomicBool::new(false)),
@@ -46,20 +46,20 @@ impl SignalingClient {
 
     pub fn status(&self) -> (bool, bool) {
         (
-            self.send_tx.is_some(),
+            self.send_tx.get().is_some(),
             self.is_logged_in.load(Ordering::SeqCst),
         )
     }
 
     #[instrument(level = "info", skip(self))]
-    pub async fn disconnect(&mut self) {
+    async fn disconnect(&mut self) {
         tracing::debug!("Disconnecting signaling client");
         let _ = self.disconnect_tx.send(());
     }
 
     #[instrument(level = "debug", skip(self), err)]
     pub async fn send(&mut self, msg: SignalingMessage) -> Result<(), SignalingError> {
-        let send_tx = self.send_tx.as_ref().ok_or_else(|| {
+        let send_tx = self.send_tx.get().ok_or_else(|| {
             tracing::warn!("Tried to send message before signaling client was started");
             SignalingError::Disconnected
         })?;
@@ -161,7 +161,6 @@ impl SignalingClient {
     #[instrument(level = "info", skip(self))]
     pub async fn logout(&mut self) -> Result<(), SignalingError> {
         tracing::debug!("Sending Logout message to server");
-        self.send(SignalingMessage::Logout).await?;
         self.disconnect().await;
         Ok(())
     }
@@ -169,37 +168,93 @@ impl SignalingClient {
     #[instrument(level = "debug", skip_all)]
     pub async fn start<S: SignalingSender + 'static, R: SignalingReceiver + 'static>(
         &mut self,
-        mut sender: S,
-        mut receiver: R,
-    ) -> Result<InterruptionReason, SignalingError> {
-        let (send_tx, mut send_rx) = mpsc::channel::<tungstenite::Message>(SEND_CHANNEL_SIZE);
+        sender: S,
+        receiver: R,
+        ready_tx: oneshot::Sender<()>,
+    ) -> InterruptionReason {
+        let (send_tx, send_rx) = mpsc::channel::<tungstenite::Message>(SEND_CHANNEL_SIZE);
         let send_tx_clone = send_tx.clone();
 
         let mut tasks = JoinSet::new();
 
-        let mut shutdown_rx = self.shutdown_rx.clone();
-        let mut disconnect_rx = self.disconnect_tx.subscribe();
         let matcher = self.matcher.clone();
         let broadcast_tx = self.broadcast_tx.clone();
+        let shutdown_rx = self.shutdown_rx.clone();
+        let disconnect_rx = self.disconnect_tx.subscribe();
 
-        tasks.spawn(async move {
-            tracing::debug!("Starting transport receive task");
+        tasks.spawn(Self::reader_task(
+            receiver,
+            send_tx_clone,
+            matcher,
+            broadcast_tx,
+            shutdown_rx,
+            disconnect_rx,
+        ));
+
+        let shutdown_rx = self.shutdown_rx.clone();
+        let disconnect_rx = self.disconnect_tx.subscribe();
+        tasks.spawn(Self::writer_task(
+            sender,
+            send_rx,
+            shutdown_rx,
+            disconnect_rx,
+        ));
+
+        tracing::trace!("Transport tasks started, handling interaction");
+        let _ = self.send_tx.set(send_tx);
+        let _ = ready_tx.send(());
+
+        let reason = match tasks.join_next().await {
+            Some(Ok(reason)) => reason,
+            Some(Err(err)) => {
+                tracing::error!(?err, "Task panicked or failed to join");
+                InterruptionReason::Error(SignalingError::Transport(anyhow::anyhow!(err)))
+            }
+            None => {
+                tracing::warn!("All tasks completed unexpectedly");
+                InterruptionReason::Disconnected
+            }
+        };
+
+        tracing::debug!(
+            ?reason,
+            "Transport task completed, aborting remaining tasks"
+        );
+        tasks.abort_all();
+
+        tracing::debug!("Cleaning up after transport tasks");
+        self.is_logged_in.store(false, Ordering::SeqCst);
+
+        reason
+    }
+
+    #[instrument(level = "debug", skip_all)]
+    fn reader_task<R: SignalingReceiver + 'static>(
+        mut receiver: R,
+        send_tx: mpsc::Sender<tungstenite::Message>,
+        matcher: ResponseMatcher,
+        broadcast_tx: broadcast::Sender<SignalingMessage>,
+        mut shutdown_rx: watch::Receiver<()>,
+        mut disconnect_rx: watch::Receiver<()>,
+    ) -> impl Future<Output = InterruptionReason> + Send {
+        async move {
+            tracing::debug!("Starting transport reader task");
 
             loop {
                 tokio::select! {
                     biased;
 
                     _ = shutdown_rx.changed() => {
-                        tracing::debug!("Shutdown signal received, aborting transport receive task");
+                        tracing::debug!("Shutdown signal received, exiting transport reader task");
                         return InterruptionReason::ShutdownSignal;
                     }
 
                     _ = disconnect_rx.changed() => {
-                        tracing::debug!("Disconnect signal received, aborting transport receive task");
-                        return InterruptionReason::ShutdownSignal;
+                        tracing::debug!("Disconnect signal received, exiting transport reader task");
+                        return InterruptionReason::Disconnected;
                     }
 
-                    msg = receiver.recv(&send_tx_clone) => {
+                    msg = receiver.recv(&send_tx) => {
                         match msg {
                             Ok(message) => {
                                 tracing::trace!(?message, "Received message from transport, trying to match against matcher");
@@ -229,20 +284,25 @@ impl SignalingClient {
                     }
                 }
             }
-        });
+        }.instrument(tracing::Span::current())
+    }
 
-        let mut shutdown_rx = self.shutdown_rx.clone();
-        let mut disconnect_rx = self.disconnect_tx.subscribe();
-
-        tasks.spawn(async move {
-            tracing::debug!("Starting transport send task");
+    #[instrument(level = "debug", skip_all)]
+    fn writer_task<S: SignalingSender + 'static>(
+        mut sender: S,
+        mut send_rx: mpsc::Receiver<tungstenite::Message>,
+        mut shutdown_rx: watch::Receiver<()>,
+        mut disconnect_rx: watch::Receiver<()>,
+    ) -> impl Future<Output = InterruptionReason> + Send {
+        async move {
+            tracing::debug!("Starting transport writer task");
 
             loop {
                 tokio::select! {
                     biased;
 
                     _ = shutdown_rx.changed() => {
-                        tracing::debug!("Shutdown signal received, aborting transport send task");
+                        tracing::debug!("Shutdown signal received, exiting transport writer task");
                         return InterruptionReason::ShutdownSignal;
                     }
 
@@ -257,24 +317,27 @@ impl SignalingClient {
                             }
                         };
 
+                        tracing::trace!("Sending Logout message to server");
                         if let Err(err) = sender.send(tungstenite::Message::from(serialized)).await {
-                            return InterruptionReason::Error(err);
+                            tracing::warn!(?err, "Failed to send Logout message, closing sender anyways");
+                        } else {
+                            tracing::debug!("Successfully logged out, closing sender");
                         }
-
-                        tracing::debug!("Successfully logged out, closing sender");
 
                         if let Err(err) = sender.close().await {
                             return InterruptionReason::Error(err);
                         }
 
-                        tracing::debug!("Successfully disconnected, aborting transport send task");
+                        tracing::debug!("Successfully disconnected, exiting transport writer task");
                         return InterruptionReason::Disconnected;
                     }
 
                     msg = send_rx.recv() => {
                         match msg {
                             Some(msg) => {
-                                tracing::debug!(?msg, "Sending message to transport");
+                                if !matches!(msg, tungstenite::Message::Pong(_)) {
+                                    tracing::debug!(?msg, "Sending message to transport");
+                                }
                                 let result = tokio::select! {
                                     biased;
                                     _ = shutdown_rx.changed() => {
@@ -289,41 +352,18 @@ impl SignalingClient {
                                 }
                             },
                             None => {
-                                tracing::debug!("Send channel closed, aborting transport send task");
+                                tracing::debug!("Send channel closed, exiting transport send task");
                                 return InterruptionReason::Disconnected;
                             }
                         }
                     }
                 }
             }
-        });
-
-        self.send_tx = Some(send_tx);
-
-        match tasks.join_next().await {
-            Some(reason) => {
-                match reason {
-                    Ok(interruption_reason) => {
-                        return Ok(interruption_reason);
-                    }
-                    Err(err) => {
-                        // TODO: Hallo! Hier weiter fixen!
-                    }
-                }
-            },
-            None => {
-                tracing::warn!("Failed to join transport task, because tasks is empty");
-                return Err(SignalingError::Disconnected); // TODO
-            },
-        }
-        tasks.abort_all();
-
-        while let Some(reason) = tasks.join_next().await {
-
-        }
+        }.instrument(tracing::Span::current())
     }
 }
 
+#[derive(Debug)]
 pub enum InterruptionReason {
     ShutdownSignal,
     Disconnected,

@@ -2,7 +2,6 @@ use crate::error::SignalingError;
 use crate::transport::{SignalingSender, SignalingReceiver};
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::error::SendError;
 use tokio_tungstenite::tungstenite;
 use vacs_protocol::ws::SignalingMessage;
 
@@ -57,7 +56,7 @@ impl SignalingSender for MockSender {
 
 #[async_trait]
 impl SignalingReceiver for MockReceiver {
-    #[tracing::instrument(level = "debug", skip_all)]
+    #[tracing::instrument(level = "debug", skip_all, send_tx)]
     async fn recv(&mut self, send_tx: &mpsc::Sender<tungstenite::Message>) -> Result<SignalingMessage, SignalingError> {
         while let Some(msg) = self.rx.recv().await {
             tracing::debug!(?msg, "Received tungstenite::Message");

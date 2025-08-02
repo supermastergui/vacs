@@ -38,7 +38,9 @@ pub async fn create(url: &str) -> Result<(TokioSender, TokioReceiver), Signaling
 impl SignalingSender for TokioSender {
     #[tracing::instrument(level = "debug", skip(self, msg))]
     async fn send(&mut self, msg: tungstenite::Message) -> Result<(), SignalingError> {
-        tracing::debug!("Sending message to server");
+        if !matches!(msg, tungstenite::Message::Pong(_)) {
+            tracing::trace!("Sending message to server");
+        }
         self.websocket_tx
             .send(msg)
             .await
@@ -65,7 +67,7 @@ impl SignalingSender for TokioSender {
 
 #[async_trait]
 impl SignalingReceiver for TokioReceiver {
-    #[tracing::instrument(level = "debug", skip(self))]
+    #[tracing::instrument(level = "debug", skip(self, send_tx))]
     async fn recv(&mut self, send_tx: &mpsc::Sender<tungstenite::Message>) -> Result<SignalingMessage, SignalingError> {
         while let Some(msg) = self.websocket_rx.next().await {
             match msg {
