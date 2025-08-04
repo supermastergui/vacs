@@ -39,10 +39,10 @@ impl SignalingSender for MockSender {
         if let Some(ref tx) = self.tx {
             tx.send(msg).await.map_err(|err| {
                 tracing::warn!(?err, "Failed to send SignalingMessage");
-                SignalingError::Transport(anyhow::anyhow!(err))
+                SignalingError::Transport(anyhow::anyhow!(err).into())
             })
         } else {
-            Err(SignalingError::Transport(anyhow::anyhow!("Sender closed")))
+            Err(SignalingError::Transport(anyhow::anyhow!("Sender closed").into()))
         }
     }
 
@@ -65,7 +65,7 @@ impl SignalingReceiver for MockReceiver {
                     tracing::debug!("Received message");
                     return SignalingMessage::deserialize(&text).map_err(|err| {
                         tracing::warn!(?err, "Failed to deserialize message");
-                        SignalingError::SerializationError(err)
+                        SignalingError::SerializationError(err.into())
                     });
                 }
                 tungstenite::Message::Close(reason) => {

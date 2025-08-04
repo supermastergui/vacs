@@ -78,13 +78,13 @@ impl SignalingClient {
 
         let serialized = SignalingMessage::serialize(&msg).map_err(|err| {
             tracing::warn!(?err, "Failed to serialize message");
-            SignalingError::SerializationError(err)
+            SignalingError::SerializationError(err.into())
         })?;
 
         send_tx
             .send(tungstenite::Message::from(serialized))
             .await
-            .map_err(|err| SignalingError::Transport(anyhow::anyhow!(err)))
+            .map_err(|err| SignalingError::Transport(anyhow::anyhow!(err).into()))
     }
 
     #[instrument(level = "debug", skip(self), err)]
@@ -118,7 +118,7 @@ impl SignalingClient {
 
         match recv_result {
             Ok(Ok(msg)) => Ok(msg),
-            Ok(Err(err)) => Err(SignalingError::Transport(anyhow::anyhow!(err))),
+            Ok(Err(err)) => Err(SignalingError::Transport(anyhow::anyhow!(err).into())),
             Err(_) => {
                 tracing::warn!("Timeout waiting for message");
                 Err(SignalingError::Timeout(
@@ -218,7 +218,7 @@ impl SignalingClient {
             Some(Ok(reason)) => reason,
             Some(Err(err)) => {
                 tracing::error!(?err, "Task panicked or failed to join");
-                InterruptionReason::Error(SignalingError::Transport(anyhow::anyhow!(err)))
+                InterruptionReason::Error(SignalingError::Transport(anyhow::anyhow!(err).into()))
             }
             None => {
                 tracing::warn!("All tasks completed unexpectedly");
@@ -325,7 +325,7 @@ impl SignalingClient {
                             Ok(serialized) => serialized,
                             Err(err) => {
                                 tracing::warn!(?err, "Failed to serialize Logout message");
-                                return InterruptionReason::Error(SignalingError::SerializationError(err));
+                                return InterruptionReason::Error(SignalingError::SerializationError(err.into()));
                             }
                         };
 
@@ -389,7 +389,6 @@ mod tests {
     use pretty_assertions::assert_matches;
     use test_log::test;
     use tokio::sync::watch;
-    use vacs_protocol::ws::{ErrorReason, LoginFailureReason};
 
     fn test_client_list() -> Vec<ClientInfo> {
         vec![
