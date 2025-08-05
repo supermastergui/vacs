@@ -100,12 +100,11 @@ impl SignalingClient {
     ) -> Result<SignalingMessage, SignalingError> {
         tracing::debug!("Waiting for message from server with timeout");
         let mut broadcast_rx = self.subscribe();
-        let rx_len = broadcast_rx.is_empty();
 
-        // if rx_len && !self.is_connected.load(Ordering::SeqCst) {
-        //     tracing::warn!("Client is not connected and there are no remaining messages, aborting receive");
-        //     return Err(SignalingError::Disconnected);
-        // }
+        if !self.is_connected.load(Ordering::SeqCst) {
+            tracing::warn!("Tried to receive message without transport being connected");
+            return Err(SignalingError::Disconnected);
+        }
 
         let recv_result = tokio::select! {
             biased;
@@ -386,9 +385,10 @@ pub enum InterruptionReason {
 mod tests {
     use super::*;
     use crate::transport::mock;
-    use pretty_assertions::assert_matches;
+    use pretty_assertions::{assert_eq, assert_matches};
     use test_log::test;
     use tokio::sync::watch;
+    use vacs_protocol::ws::{ErrorReason, LoginFailureReason};
 
     fn test_client_list() -> Vec<ClientInfo> {
         vec![
@@ -592,6 +592,10 @@ mod tests {
             clients: test_client_list(),
         };
 
+        let task = tokio::spawn(async move {
+            return client.recv().await;
+        });
+
         let result = handle
             .incoming_tx
             .send(tungstenite::Message::from(
@@ -600,17 +604,15 @@ mod tests {
             .await;
         assert!(result.is_ok());
 
-        let recv_result = client.recv().await;
-        assert!(recv_result.is_ok());
-        assert_eq!(recv_result.unwrap(), msg);
+        assert_eq!(task.await.unwrap().unwrap(), msg);
     }
 
     #[test(tokio::test)]
-    async fn recv_shutdown_with_message_remaining() {
+    async fn recv_shutdown() {
         let ((sender, receiver), handle) = mock::create();
         let (shutdown_tx, shutdown_rx) = watch::channel(());
         let (ready_tx, ready_rx) = oneshot::channel();
-        let mut client = SignalingClient::new(shutdown_rx);
+        let client = SignalingClient::new(shutdown_rx);
         let mut client_clone = client.clone();
 
         tokio::spawn(async move {
@@ -621,6 +623,11 @@ mod tests {
         let msg = SignalingMessage::ClientList {
             clients: test_client_list(),
         };
+
+        let mut client_clone = client.clone();
+        let task = tokio::spawn(async move {
+            return client_clone.recv().await;
+        });
 
         let result = handle
             .incoming_tx
@@ -634,304 +641,385 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_matches!(client.status(), (false, false));
 
-        let recv_result = client.recv().await;
+        let recv_result = task.await.unwrap();
         assert!(recv_result.is_err());
         assert_eq!(
             recv_result.unwrap_err().to_string(),
             "timeout: Shutdown signal received".to_string()
         );
+    }
+
+    #[test(tokio::test)]
+    async fn recv_with_timeout() {
+        let ((sender, receiver), handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::ClientList {
+            clients: test_client_list(),
+        };
+
+        let task = tokio::spawn(async move {
+            return client.recv_with_timeout(Duration::from_millis(100)).await;
+        });
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        assert_eq!(task.await.unwrap().unwrap(), msg);
+    }
+
+    #[test(tokio::test)]
+    async fn recv_with_timeout_expired() {
+        let ((sender, receiver), handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::ClientList {
+            clients: test_client_list(),
+        };
+
+        let task = tokio::spawn(async move {
+            return client.recv_with_timeout(Duration::from_millis(10)).await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let recv_result = task.await.unwrap();
+        assert!(recv_result.is_err());
+        assert_eq!(
+            recv_result.unwrap_err().to_string(),
+            "timeout: Timeout waiting for message".to_string()
+        );
+    }
+
+    #[test(tokio::test)]
+    async fn recv_disconnected() {
+        let ((sender, receiver), handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        drop(handle.incoming_tx);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_matches!(client.status(), (false, false));
 
         let recv_result = client.recv().await;
+        assert!(recv_result.is_err());
         assert_matches!(recv_result, Err(SignalingError::Disconnected));
     }
 
-    // #[test(tokio::test)]
-    // async fn recv() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::ClientList {
-    //         clients: test_client_list(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let recv_result = client.recv().await;
-    //     assert!(recv_result.is_ok());
-    //     assert_eq!(recv_result.unwrap(), msg);
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_shutdown() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::Login {
-    //         token: "test".to_string(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     shutdown_tx.send(()).unwrap();
-    //     let recv_result = client.recv().await;
-    //     assert!(recv_result.is_err());
-    //     assert_eq!(
-    //         recv_result.unwrap_err().to_string(),
-    //         "timeout: Shutdown signal received".to_string()
-    //     );
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_with_timeout() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::CallAnswer {
-    //         peer_id: "client1".to_string(),
-    //         sdp: "sdp".to_string(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let recv_result = client.recv_with_timeout(Duration::from_millis(100)).await;
-    //     assert!(recv_result.is_ok());
-    //     assert_eq!(recv_result.unwrap(), msg);
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_with_timeout_expired() {
-    //     let (mock, _handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //
-    //     let recv_result = client.recv_with_timeout(Duration::from_millis(100)).await;
-    //     assert!(recv_result.is_err());
-    //     assert_eq!(
-    //         recv_result.unwrap_err().to_string(),
-    //         "timeout: Timeout waiting for message".to_string()
-    //     );
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_with_timeout_shutdown() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::Login {
-    //         token: "test".to_string(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     shutdown_tx.send(()).unwrap();
-    //     let recv_result = client.recv_with_timeout(Duration::from_millis(100)).await;
-    //     assert!(recv_result.is_err());
-    //     assert_eq!(
-    //         recv_result.unwrap_err().to_string(),
-    //         "timeout: Shutdown signal received".to_string()
-    //     );
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_server_error() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::Error {
-    //         reason: ErrorReason::Internal("something failed".to_string()),
-    //         peer_id: None,
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let recv_result = client.recv().await;
-    //     assert!(recv_result.is_ok());
-    //     assert_eq!(recv_result.unwrap(), msg);
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_peer_connection_error() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::Error {
-    //         reason: ErrorReason::PeerConnection,
-    //         peer_id: Some("client1".to_string()),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let recv_result = client.recv().await;
-    //     assert!(recv_result.is_ok());
-    //     assert_eq!(recv_result.unwrap(), msg);
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn recv_disconnected() {
-    //     let (mock, handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //
-    //     drop(handle.incoming_tx); // Simulate the incoming channel being closed
-    //
-    //     let recv_result = client.recv().await;
-    //     assert!(recv_result.is_err());
-    //     assert_matches!(recv_result, Err(SignalingError::Disconnected));
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let test_clients = test_client_list();
-    //     let msg = SignalingMessage::ClientList {
-    //         clients: test_clients.clone(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_ok());
-    //     assert_eq!(login_result.unwrap(), test_clients);
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_timeout() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClientBuilder::new(mock, shutdown_rx)
-    //         .with_login_timeout(Duration::from_millis(100))
-    //         .build();
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(login_result, Err(SignalingError::Timeout(_)));
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_unauthorized() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::LoginFailure {
-    //         reason: LoginFailureReason::Unauthorized,
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(
-    //         login_result,
-    //         Err(SignalingError::LoginError(LoginFailureReason::Unauthorized))
-    //     );
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_invalid_credentials() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::LoginFailure {
-    //         reason: LoginFailureReason::InvalidCredentials,
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(
-    //         login_result,
-    //         Err(SignalingError::LoginError(
-    //             LoginFailureReason::InvalidCredentials
-    //         ))
-    //     );
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_duplicate_id() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::LoginFailure {
-    //         reason: LoginFailureReason::DuplicateId,
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(
-    //         login_result,
-    //         Err(SignalingError::LoginError(LoginFailureReason::DuplicateId))
-    //     );
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_unexpected_message() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::CallAnswer {
-    //         peer_id: "client1".to_string(),
-    //         sdp: "sdp".to_string(),
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(login_result, Err(SignalingError::ProtocolError(_)));
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
-    //
-    // #[test(tokio::test)]
-    // async fn login_server_error() {
-    //     let (mock, mut handle) = MockTransport::new();
-    //     let (_shutdown_tx, shutdown_rx) = watch::channel(());
-    //     let mut client = SignalingClient::new(mock, shutdown_rx);
-    //     let msg = SignalingMessage::Error {
-    //         reason: ErrorReason::Internal("something failed".to_string()),
-    //         peer_id: None,
-    //     };
-    //
-    //     let result = handle.incoming_tx.send(msg.clone()).await;
-    //     assert!(result.is_ok());
-    //
-    //     let login_result = client.login("token1").await;
-    //     assert!(login_result.is_err());
-    //     assert_matches!(login_result, Err(SignalingError::ServerError(_)));
-    //
-    //     let sent_message = handle.outgoing_rx.recv().await;
-    //     assert_matches!(sent_message, Some(SignalingMessage::Login { ref token }) if token == "token1");
-    // }
+    #[test(tokio::test)]
+    async fn login() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let test_clients = test_client_list();
+        let msg = SignalingMessage::ClientList {
+            clients: test_clients.clone(),
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_ok());
+        assert_eq!(login_result.unwrap(), test_clients);
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+            .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_timeout() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(login_result, Err(SignalingError::Timeout(_)));
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+            .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_unauthorized() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::LoginFailure {
+            reason: LoginFailureReason::Unauthorized,
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(
+            login_result,
+            Err(SignalingError::LoginError(LoginFailureReason::Unauthorized))
+        );
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+                .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_invalid_credentials() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::LoginFailure {
+            reason: LoginFailureReason::InvalidCredentials,
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(
+            login_result,
+            Err(SignalingError::LoginError(
+                LoginFailureReason::InvalidCredentials
+            ))
+        );
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+                .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_duplicate_id() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::LoginFailure {
+            reason: LoginFailureReason::DuplicateId,
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(
+            login_result,
+            Err(SignalingError::LoginError(LoginFailureReason::DuplicateId))
+        );
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+                .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_unexpected_message() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::CallAnswer {
+            peer_id: "client1".to_string(),
+            sdp: "sdp".to_string(),
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(login_result, Err(SignalingError::ProtocolError(_)));
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+                .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
+
+    #[test(tokio::test)]
+    async fn login_server_error() {
+        let ((sender, receiver), mut handle) = mock::create();
+        let (_shutdown_tx, shutdown_rx) = watch::channel(());
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let mut client = SignalingClient::new(shutdown_rx);
+        let mut client_clone = client.clone();
+
+        tokio::spawn(async move {
+            client_clone.start(sender, receiver, ready_tx).await;
+        });
+        assert!(ready_rx.await.is_ok());
+
+        let msg = SignalingMessage::Error {
+            reason: ErrorReason::Internal("something failed".to_string()),
+            peer_id: None,
+        };
+
+        let result = handle
+            .incoming_tx
+            .send(tungstenite::Message::from(
+                SignalingMessage::serialize(&msg).unwrap(),
+            ))
+            .await;
+        assert!(result.is_ok());
+
+        let login_result = client.login("token1", Duration::from_millis(100)).await;
+        assert!(login_result.is_err());
+        assert_matches!(login_result, Err(SignalingError::ServerError(_)));
+
+        let login_msg = tungstenite::Message::from(
+            SignalingMessage::serialize(&SignalingMessage::Login {
+                token: "token1".to_string(),
+            })
+                .unwrap(),
+        );
+
+        let sent_message = handle.outgoing_rx.recv().await;
+        assert_eq!(sent_message, Some(login_msg));
+    }
 }
