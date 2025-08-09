@@ -17,7 +17,7 @@ use vacs_protocol::ws::SignalingMessage;
 
 pub struct AppStateInner {
     pub config: AppConfig,
-    connection: Option<Connection>,
+    connection: Connection,
     pub http_client: reqwest::Client,
     cookie_store: Arc<SecureCookieStore>,
 }
@@ -31,7 +31,7 @@ impl AppStateInner {
 
         Ok(Self {
             config: config.clone(),
-            connection: None,
+            connection: Connection::new(),
             http_client: reqwest::ClientBuilder::new()
                 .user_agent(APP_USER_AGENT)
                 .cookie_provider(cookie_store.clone())
@@ -59,8 +59,8 @@ impl AppStateInner {
     pub async fn connect_signaling(&mut self, app: &AppHandle) -> Result<(), Error> {
         log::info!("Connecting to signaling server");
 
-        if self.connection.is_some() {
-            log::info!("Already connected to signaling server");
+        if self.connection.is_logged_in() {
+            log::info!("Already connected and logged in with signaling server");
             return Ok(());
         }
 
@@ -70,12 +70,9 @@ impl AppStateInner {
             .await?
             .token;
 
-        log::debug!("Creating signaling connection");
-        let mut connection = Connection::new().await?;
-
         log::debug!("Connecting to signaling server");
         let (disconnect_tx, disconnect_rx) = oneshot::channel();
-        connection
+        self.connection
             .connect(
                 app.clone(),
                 self.config.backend.ws_url.as_str(),
@@ -84,20 +81,18 @@ impl AppStateInner {
             )
             .await?;
 
-        self.connection = Some(connection);
-
         let app_clone = app.clone();
-        tokio::spawn(async move {
-            if disconnect_rx.await.is_ok() {
-                log::debug!("Signaling connection task ended, cleaning up state");
-                app_clone
-                    .state::<AppState>()
-                    .lock()
-                    .await
-                    .handle_signaling_connection_closed(&app_clone)
-                    .await;
-                log::debug!("Finished cleaning up state after signaling connection task ended");
-            }
+        tauri::async_runtime::spawn(async move {
+            let requested = disconnect_rx.await.unwrap_or_else(|_| false);
+
+            log::debug!("Signaling connection task ended, cleaning up state");
+            app_clone
+                .state::<AppState>()
+                .lock()
+                .await
+                .handle_signaling_connection_closed(&app_clone, requested)
+                .await;
+            log::debug!("Finished cleaning up state after signaling connection task ended");
         });
 
         log::info!("Successfully connected to signaling server");
@@ -107,25 +102,25 @@ impl AppStateInner {
     pub async fn disconnect_signaling(&mut self, app: &AppHandle) {
         log::info!("Disconnecting from signaling server");
 
-        let connection = self.connection.take();
-        if let Some(mut connection) = connection {
-            connection.disconnect();
-            app.emit("signaling:disconnected", Value::Null).ok();
-            log::debug!("Successfully disconnected from signaling server");
-        } else {
+        if !self.connection.is_connected() {
             log::info!("Tried to disconnection from signaling server, but not connected");
+            return;
         }
+
+        self.connection.disconnect();
+        app.emit("signaling:disconnected", Value::Null).ok();
+        log::debug!("Successfully disconnected from signaling server");
     }
 
     pub async fn send_signaling_message(&mut self, msg: SignalingMessage) -> Result<(), Error> {
         log::trace!("Sending signaling message: {msg:?}");
-        
-        let Some(connection) = self.connection.as_mut() else {
-            log::warn!("Not connected to signaling server, cannot send message");
+
+        if !self.connection.is_logged_in() {
+            log::warn!("Not logged in with signaling server, cannot send message");
             return Err(Error::Network("Not connected".to_string()));
         };
 
-        if let Err(err) = connection.send(msg).await {
+        if let Err(err) = self.connection.send(msg).await {
             log::warn!("Failed to send signaling message: {err:?}");
             return Err(err.into());
         }
@@ -134,20 +129,18 @@ impl AppStateInner {
         Ok(())
     }
 
-    async fn handle_signaling_connection_closed(&mut self, app: &AppHandle) {
-        log::info!("Handling closed signaling server connection");
+    async fn handle_signaling_connection_closed(&mut self, app: &AppHandle, requested: bool) {
+        log::info!("Handling closed signaling server connection, requested: {requested}");
 
-        if self.connection.take().is_some() {
-            app.emit("signaling:disconnected", Value::Null).ok();
+        app.emit("signaling:disconnected", Value::Null).ok();
+        if !requested {
             app.emit::<FrontendError>(
                 "error",
                 Error::Network("Disconnected from websocket connection".to_string()).into(),
             )
-            .ok();
-            log::debug!("Successfully handled closed signaling server connection");
-        } else {
-            log::info!("Not connected to signaling server, nothing to handle");
+                .ok();
         }
+        log::debug!("Successfully handled closed signaling server connection");
     }
 
     fn parse_http_request_url(

@@ -2,6 +2,7 @@ pub(crate) mod commands;
 
 use crate::config::{WS_LOGIN_TIMEOUT, WS_READY_TIMEOUT};
 use tauri::{AppHandle, Emitter};
+use tokio::pin;
 use tokio::sync::{oneshot, watch};
 use tokio::task::JoinSet;
 use vacs_protocol::ws::SignalingMessage;
@@ -12,19 +13,17 @@ use vacs_signaling::transport;
 pub struct Connection {
     client: SignalingClient,
     shutdown_tx: watch::Sender<()>,
-    tasks: JoinSet<()>,
 }
 
 impl Connection {
-    pub async fn new() -> Result<Self, SignalingError> {
+    pub fn new() -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
         let client = SignalingClient::new(shutdown_rx);
 
-        Ok(Self {
+        Self {
             client,
             shutdown_tx,
-            tasks: JoinSet::new(),
-        })
+        }
     }
 
     pub async fn connect(
@@ -32,7 +31,7 @@ impl Connection {
         app: AppHandle,
         ws_url: &str,
         token: &str,
-        on_disconnect: oneshot::Sender<()>,
+        on_disconnect: oneshot::Sender<bool>,
     ) -> Result<(), SignalingError> {
         log::info!("Connecting to signaling server");
 
@@ -41,38 +40,67 @@ impl Connection {
 
         let (ready_tx, ready_rx) = oneshot::channel();
         let mut client = self.client.clone();
-        self.tasks.spawn(async move {
+
+        let (cancel_tx, _) = watch::channel(());
+        let cancel_tx_clone = cancel_tx.clone();
+
+        let client_task = tauri::async_runtime::spawn(async move {
             log::trace!("Signaling client interaction task started");
 
-            let reason = client.start(sender, receiver, ready_tx).await;
-            match reason {
-                InterruptionReason::Disconnected => {
-                    log::debug!("Signaling client interaction ended due to disconnect, emitting event");
-                    let _ = on_disconnect.send(());
-                },
-                InterruptionReason::ShutdownSignal => {
-                    log::trace!("Signaling client interaction ended due to shutdown signal, not emitting further");
-                },
-                InterruptionReason::Error(err) => {
-                    log::warn!("Signaling client interaction ended due to error: {err:?}");
-                },
-            };
+            let mut cancel_rx = cancel_tx.subscribe();
 
-            log::trace!("Signaling client interaction task finished");
+            tokio::select! {
+                biased;
+
+                _ = cancel_rx.changed() => {
+                    log::info!("Cancel signal received, stopping signaling connection client");
+                }
+
+                reason = client.start(sender, receiver, ready_tx) => {
+                    match reason {
+                        InterruptionReason::Disconnected(requested) => {
+                            log::debug!(
+                                "Signaling client interaction ended due to disconnect. Requested: {requested}"
+                            );
+                            on_disconnect.send(requested).ok();
+                        }
+                        InterruptionReason::ShutdownSignal => {
+                            log::trace!(
+                                "Signaling client interaction ended due to shutdown signal"
+                            );
+                            on_disconnect.send(false).ok();
+                        }
+                        InterruptionReason::Error(err) => {
+                            log::warn!("Signaling client interaction ended due to error: {err:?}");
+                            on_disconnect.send(false).ok();
+                        }
+                    };
+                    cancel_tx.send(()).ok();
+                }
+            }
+
+            log::trace!("Signaling client task finished");
         });
 
         let app_clone = app.clone();
         let mut broadcast_rx = self.client.subscribe();
         let mut shutdown_rx = self.shutdown_tx.subscribe();
-        self.tasks.spawn(async move {
+        let interaction_task = tauri::async_runtime::spawn(async move {
             log::trace!("Signaling connection interaction task started");
+
+            let mut cancel_rx = cancel_tx_clone.subscribe();
 
             loop {
                 tokio::select! {
                     biased;
 
+                    _ = cancel_rx.changed() => {
+                        log::info!("Cancel signal received, stopping signaling connection interaction handling");
+                        break;
+                    }
+
                     _ = shutdown_rx.changed() => {
-                        log::info!("Shutdown signal received, stopping signaling connection handling");
+                        log::info!("Shutdown signal received, stopping signaling connection interaction handling");
                         break;
                     }
 
@@ -88,15 +116,21 @@ impl Connection {
                 }
             }
 
+            cancel_tx_clone.send(()).ok();
+
             log::trace!("Signaling connection interaction task finished");
         });
 
         log::debug!("Waiting for signaling connection to be ready");
-        if tokio::time::timeout(WS_READY_TIMEOUT, ready_rx).await.is_err() {
+        if tokio::time::timeout(WS_READY_TIMEOUT, ready_rx)
+            .await
+            .is_err()
+        {
             log::warn!(
                 "Signaling connection did not become ready in time, aborting remaining tasks"
             );
-            self.tasks.abort_all();
+            client_task.abort();
+            interaction_task.abort();
             return Err(SignalingError::Timeout(
                 "Signaling client did not become ready in time".to_string(),
             ));
@@ -107,7 +141,8 @@ impl Connection {
             Ok(clients) => clients,
             Err(err) => {
                 log::warn!("Login failed, aborting connection: {err:?}");
-                self.tasks.abort_all();
+                client_task.abort();
+                interaction_task.abort();
                 return Err(err);
             }
         };
@@ -119,31 +154,14 @@ impl Connection {
         app.emit("signaling:connected", "LOVV_CTR").ok(); // TODO: Update display name
         app.emit("signaling:client-list", clients).ok();
 
-        /*match self.tasks.join_next().await {
-            Some(Ok(_)) => {
-                log::debug!("Signaling connection task ended cleanly");
-            }
-            Some(Err(err)) => {
-                log::error!("Task panicked or failed to join: {err:?}");
-            }
-            None => {
-                log::warn!("All tasks completed unexpectedly");
-            }
-        }
-
-        log::debug!("Signaling connection task completed, aborting remaining tasks");
-        self.tasks.abort_all();*/
-
         Ok(())
     }
 
     pub fn disconnect(&mut self) {
         log::trace!("Disconnect requested for signaling connection");
-        //let _ = self.shutdown_tx.send(());
         self.client.disconnect();
-        self.tasks.abort_all();
     }
-    
+
     pub async fn send(&mut self, msg: SignalingMessage) -> Result<(), SignalingError> {
         self.client.send(msg).await
     }
@@ -164,6 +182,14 @@ impl Connection {
             SignalingMessage::Error { .. } => {}
             _ => {}
         }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.client.status().0
+    }
+
+    pub fn is_logged_in(&self) -> bool {
+        self.client.status().1
     }
 }
 

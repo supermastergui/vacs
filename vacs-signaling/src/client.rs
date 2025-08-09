@@ -190,23 +190,25 @@ impl SignalingClient {
         let shutdown_rx = self.shutdown_rx.clone();
         let disconnect_rx = self.disconnect_tx.subscribe();
 
-        tasks.spawn(Self::reader_task(
-            receiver,
-            send_tx_clone,
-            matcher,
-            broadcast_tx,
-            shutdown_rx,
-            disconnect_rx,
-        ));
+        let handle = tokio::runtime::Handle::current();
+
+        tasks.spawn_on(Self::reader_task(
+                receiver,
+                send_tx_clone,
+                matcher,
+                broadcast_tx,
+                shutdown_rx,
+                disconnect_rx,
+        ), &handle);
 
         let shutdown_rx = self.shutdown_rx.clone();
         let disconnect_rx = self.disconnect_tx.subscribe();
-        tasks.spawn(Self::writer_task(
+        tasks.spawn_on(Self::writer_task(
             sender,
             send_rx,
             shutdown_rx,
             disconnect_rx,
-        ));
+        ), &handle);
 
         tracing::trace!("Transport tasks started, handling interaction");
         *self.send_tx.lock().await = Some(send_tx);
@@ -221,7 +223,7 @@ impl SignalingClient {
             }
             None => {
                 tracing::warn!("All tasks completed unexpectedly");
-                InterruptionReason::Disconnected
+                InterruptionReason::Disconnected(false)
             }
         };
 
@@ -262,7 +264,7 @@ impl SignalingClient {
 
                     _ = disconnect_rx.changed() => {
                         tracing::debug!("Disconnect signal received, exiting transport reader task");
-                        return InterruptionReason::Disconnected;
+                        return InterruptionReason::Disconnected(true);
                     }
 
                     msg = receiver.recv(&send_tx) => {
@@ -283,7 +285,7 @@ impl SignalingClient {
                                 return match err {
                                     SignalingError::Disconnected => {
                                         tracing::debug!("Transport disconnected, aborting interaction handling");
-                                        InterruptionReason::Disconnected
+                                        InterruptionReason::Disconnected(false)
                                     }
                                     err => {
                                         tracing::warn!(?err, "Received error from transport, continuing");
@@ -340,7 +342,7 @@ impl SignalingClient {
                         }
 
                         tracing::debug!("Successfully disconnected, exiting transport writer task");
-                        return InterruptionReason::Disconnected;
+                        return InterruptionReason::Disconnected(true);
                     }
 
                     msg = send_rx.recv() => {
@@ -364,7 +366,7 @@ impl SignalingClient {
                             },
                             None => {
                                 tracing::debug!("Send channel closed, exiting transport send task");
-                                return InterruptionReason::Disconnected;
+                                return InterruptionReason::Disconnected(false);
                             }
                         }
                     }
@@ -377,7 +379,7 @@ impl SignalingClient {
 #[derive(Debug)]
 pub enum InterruptionReason {
     ShutdownSignal,
-    Disconnected,
+    Disconnected(bool),
     Error(SignalingError),
 }
 
@@ -457,7 +459,7 @@ mod tests {
 
         client.disconnect();
 
-        assert_matches!(task.await, Ok(InterruptionReason::Disconnected));
+        assert_matches!(task.await, Ok(InterruptionReason::Disconnected(true)));
         assert_matches!(client.status(), (false, false));
     }
 
