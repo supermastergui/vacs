@@ -83,12 +83,11 @@ impl ResponseMatcher {
     #[instrument(level = "debug", skip(self, msg))]
     pub fn try_match(&self, msg: &SignalingMessage) {
         let mut inner = self.inner.try_lock();
-        if let Ok(ref mut queue) = inner {
-            if let Some(pos) = queue.iter().position(|entry| (entry.predicate)(msg)) {
-                if let Some(entry) = queue.remove(pos) {
-                    let _ = entry.responder.send(msg.clone());
-                }
-            }
+        if let Ok(ref mut queue) = inner
+            && let Some(pos) = queue.iter().position(|entry| (entry.predicate)(msg))
+            && let Some(entry) = queue.remove(pos)
+        {
+            let _ = entry.responder.send(msg.clone());
         }
     }
 }

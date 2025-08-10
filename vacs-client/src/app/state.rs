@@ -83,7 +83,7 @@ impl AppStateInner {
 
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
-            let requested = disconnect_rx.await.unwrap_or_else(|_| false);
+            let requested = disconnect_rx.await.unwrap_or(false);
 
             log::debug!("Signaling connection task ended, cleaning up state");
             app_clone

@@ -42,12 +42,12 @@ impl StoreBackend for MemoryStore {
     async fn get<V: DeserializeOwned + Send>(&self, key: &str) -> anyhow::Result<Option<V>> {
         tracing::trace!("Getting value from memory store");
         if let Some(stored_value) = self.map.get(key) {
-            if let Some(expires_at) = stored_value.expires_at {
-                if Instant::now() > expires_at {
-                    tracing::trace!("Value expired, removing from memory store and returning None");
-                    self.map.remove(key);
-                    return Ok(None);
-                }
+            if let Some(expires_at) = stored_value.expires_at
+                && Instant::now() > expires_at
+            {
+                tracing::trace!("Value expired, removing from memory store and returning None");
+                self.map.remove(key);
+                return Ok(None);
             }
 
             tracing::trace!("Deserializing value from memory store");
