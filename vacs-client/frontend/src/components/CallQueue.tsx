@@ -6,18 +6,23 @@ function CallQueue() {
     const blink = useCallStore(state => state.blink);
     const callDisplay = useCallStore(state => state.callDisplay);
     const incomingCalls = useCallStore(state => state.incomingCalls);
-    const acceptCall = useCallStore(state => state.acceptCall)
-    const endCall = useCallStore(state => state.endCall);
+    const {acceptCall, endCall, dismissRejectedPeer} = useCallStore(state => state.actions);
 
     const handleCallDisplayClick = async (peerId: string) => {
-        try {
-            await invokeStrict("signaling_end_call", {peerId: peerId});
-            endCall();
-        } catch {}
+        if (callDisplay?.type === "accepted" || callDisplay?.type === "outgoing") {
+            try {
+                await invokeStrict("signaling_end_call", {peerId: peerId});
+                endCall();
+            } catch {}
+        } else if (callDisplay?.type === "rejected") {
+            dismissRejectedPeer();
+        }
     };
 
     const handleAnswerKeyClick = async (peerId: string, sdp: string) => {
+        // Can't call someone if you are currently in an active or outgoing/rejected call
         if (callDisplay !== undefined) return;
+
         try {
             await invokeStrict("signaling_accept_call", {peerId: peerId, sdp: sdp});
             acceptCall(peerId);
@@ -28,8 +33,8 @@ function CallQueue() {
         <div className="flex flex-col-reverse gap-3 pt-3 pr-[1px] overflow-y-auto" style={{scrollbarWidth: "none"}}>
             {/*Call Display*/}
             {callDisplay !== undefined ? (
-                <Button color={callDisplay.type === "accepted" ? "green" : "gray"}
-                        highlight={callDisplay.type === "outgoing" ? "green" : undefined}
+                <Button color={callDisplay.type === "accepted" ? "green" : callDisplay.type === "rejected" && blink ? "green" : "gray"}
+                        highlight={callDisplay.type === "outgoing" || callDisplay.type === "rejected" ? "green" : undefined}
                         softDisabled={true}
                         onClick={() => handleCallDisplayClick(callDisplay.peerId)}
                         className={"min-h-16 text-sm"}>{callDisplay.peerId}</Button>

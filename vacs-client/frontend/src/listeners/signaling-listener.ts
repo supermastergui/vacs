@@ -6,7 +6,7 @@ import {CallOffer} from "../types/call.ts";
 
 export function setupSignalingListeners() {
     const { setConnected, setDisplayName, setClients, addClient, removeClient } = useSignalingStore.getState();
-    const { addIncomingCall, removePeer } = useCallStore.getState();
+    const { addIncomingCall, removePeer, rejectPeer, acceptCall } = useCallStore.getState().actions;
 
     const unlistenFns: (Promise<UnlistenFn>)[] = [];
 
@@ -24,22 +24,24 @@ export function setupSignalingListeners() {
                 setClients(event.payload);
             }),
             listen<ClientInfo>("signaling:client-connected", (event) => {
-                console.log("client-connected", event.payload);
                 addClient(event.payload);
             }),
             listen<string>("signaling:client-disconnected", (event) => {
-                console.log("client-disconnected", event.payload);
                 removeClient(event.payload);
                 removePeer(event.payload);
             }),
             listen<CallOffer>("signaling:call-offer", (event) => {
-                console.log("call-offer", event.payload);
                 addIncomingCall(event.payload);
             }),
+            listen<string>("signaling:call-answer", (event) => {
+                acceptCall(event.payload);
+            }),
             listen<string>("signaling:call-end", (event) => {
-                console.log("call-end", event.payload);
                 removePeer(event.payload);
-            })
+            }),
+            listen<string>("signaling:call-reject", (event) => {
+                rejectPeer(event.payload);
+            }),
         );
     };
 

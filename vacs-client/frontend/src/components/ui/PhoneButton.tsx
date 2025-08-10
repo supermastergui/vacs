@@ -7,7 +7,7 @@ function PhoneButton() {
 
     return (
         <Button color={callDisplayType === "accepted" ? "green" : callDisplayType === "outgoing" ? "gray" : blink ? "green" : "gray"}
-                highlight={callDisplayType === "outgoing" ? "green" : undefined}
+                highlight={callDisplayType === "outgoing" || callDisplayType === "rejected" ? "green" : undefined}
                 className="w-46 min-h-16 text-xl">Phone</Button>
     );
 }

@@ -171,14 +171,23 @@ impl Connection {
                 app.emit("signaling:call-offer", call_offer).ok();
                 // TODO play chime
             }
-            SignalingMessage::CallEnd { peer_id } => {
-                log::trace!("Call end received from {peer_id}");
-                app.emit("signaling:call-end", peer_id).ok();
-                // TODO end call in webrtc/audio
+            SignalingMessage::CallAnswer { peer_id, .. } => {
+                log::trace!("Call answer received from {peer_id}");
+                // TODO start call in webrtc/audio
+                app.emit("signaling:call-answer", peer_id).ok();
+            }
+            SignalingMessage::CallReject { peer_id } => {
+                log::trace!("Call reject received from {peer_id}");
+                app.emit("signaling:call-reject", peer_id).ok();
             }
             SignalingMessage::CallIceCandidate { peer_id, .. } => {
                 log::trace!("ICE candidate received from {peer_id}");
                 // TODO pass to webrtc
+            }
+            SignalingMessage::CallEnd { peer_id } => {
+                log::trace!("Call end received from {peer_id}");
+                // TODO end call in webrtc/audio
+                app.emit("signaling:call-end", peer_id).ok();
             }
             SignalingMessage::ClientConnected { client } => {
                 log::trace!("Client connected: {client:?}");

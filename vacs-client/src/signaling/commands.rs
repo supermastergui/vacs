@@ -104,3 +104,22 @@ pub async fn signaling_end_call(
         )
         .await
 }
+
+#[tauri::command]
+#[vacs_macros::log_err]
+pub async fn signaling_reject_call(
+    app_state: State<'_, AppState>,
+    peer_id: String,
+) -> Result<(), Error> {
+    log::debug!("Rejecting call from {peer_id}");
+
+    app_state
+        .lock()
+        .await
+        .send_signaling_message(
+            SignalingMessage::CallReject {
+                peer_id,
+            },
+        )
+        .await
+}
