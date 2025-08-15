@@ -1,17 +1,9 @@
-use serde::Serialize;
 use tauri::State;
 use vacs_audio::{Device, DeviceType};
 use crate::app::state::AppState;
-use crate::config::{Persistable, PersistedAudioConfig};
+use crate::audio::{AudioDevices, AudioVolumes, VolumeType};
+use crate::config::{Persistable, PersistedAudioConfig, AUDIO_SETTINGS_FILE_NAME};
 use crate::error::Error;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AudioDevices {
-    selected: String,
-    default: String,
-    all: Vec<String>,
-}
 
 #[tauri::command]
 #[vacs_macros::log_err]
@@ -53,7 +45,47 @@ pub async fn audio_set_device(app_state: State<'_, AppState>, device_type: Devic
         state.config.audio.clone().into()
     };
 
-    persisted_audio_config.persist("audio.toml")?;
+    persisted_audio_config.persist(AUDIO_SETTINGS_FILE_NAME)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+#[vacs_macros::log_err]
+pub async fn audio_get_volumes(app_state: State<'_, AppState>) -> Result<AudioVolumes, Error> {
+    log::info!("Getting audio volumes");
+
+
+    let state = app_state.lock().await;
+    let audio_config = &state.config.audio;
+
+    Ok(AudioVolumes {
+        input: audio_config.input_device_volume,
+        output: audio_config.output_device_volume,
+        click: audio_config.click_volume,
+        chime: audio_config.chime_volume,
+    })
+}
+
+#[tauri::command]
+#[vacs_macros::log_err]
+pub async fn audio_set_volume(app_state: State<'_, AppState>, volume_type: VolumeType, volume: f32) -> Result<(), Error> {
+    log::info!("Setting audio volume (type: {:?}, volume: {:?})", volume_type, volume);
+
+    let persisted_audio_config: PersistedAudioConfig = {
+        let mut state = app_state.lock().await;
+
+        match volume_type {
+            VolumeType::Input => state.config.audio.input_device_volume = volume,
+            VolumeType::Output => state.config.audio.output_device_volume = volume,
+            VolumeType::Click => state.config.audio.click_volume = volume,
+            VolumeType::Chime => state.config.audio.chime_volume = volume,
+        }
+
+        state.config.audio.clone().into()
+    };
+
+    persisted_audio_config.persist(AUDIO_SETTINGS_FILE_NAME)?;
 
     Ok(())
 }

@@ -3,14 +3,12 @@ use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::Duration;
-use anyhow::Context;
-use config::{Config, Environment, File};
-use serde::Deserialize;
 
 /// User-Agent string used for all HTTP requests.
 pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 pub const WS_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const WS_READY_TIMEOUT: Duration = Duration::from_secs(10);
+pub const AUDIO_SETTINGS_FILE_NAME: &str = "audio.toml";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -110,6 +108,10 @@ pub struct BackendEndpointsConfigs {
 pub struct AudioConfig {
     pub input_device: String,
     pub output_device: String,
+    pub input_device_volume: f32,
+    pub output_device_volume: f32,
+    pub click_volume: f32,
+    pub chime_volume: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]

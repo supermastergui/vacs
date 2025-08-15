@@ -3,8 +3,14 @@ import type {JSX} from "preact";
 import "../../styles/volume-slider.css";
 import {clsx} from "clsx";
 
-function VolumeSlider() {
-    const [position, setPosition] = useState<number>(0.5);
+type VolumeSliderProps = {
+    position: number;
+    setPosition: (position: number) => void;
+    savePosition: (position: number) => void;
+}
+
+function VolumeSlider(props: VolumeSliderProps) {
+    const {position, setPosition} = props;
     const [dragging, setDragging] = useState<boolean>(false);
     const isDragging = useRef<boolean>(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -37,6 +43,10 @@ function VolumeSlider() {
     }
 
     const handleMouseUp = ()=> {
+        if (isDragging.current) {
+            props.savePosition(position);
+        }
+
         isDragging.current = false;
         setDragging(false);
     }

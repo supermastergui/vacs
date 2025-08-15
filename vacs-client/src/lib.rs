@@ -48,6 +48,8 @@ pub fn run() {
             app::commands::app_frontend_ready,
             audio::commands::audio_get_devices,
             audio::commands::audio_set_device,
+            audio::commands::audio_get_volumes,
+            audio::commands::audio_set_volume,
             auth::commands::auth_check_session,
             auth::commands::auth_logout,
             auth::commands::auth_open_oauth_url,
