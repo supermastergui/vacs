@@ -11,6 +11,8 @@ import {AudioVolumes} from "../types/audio.ts";
 function VolumeSettings() {
     const [volumes, setVolumes] = useState<AudioVolumes>({input: 0.5, output: 0.5, click: 0.5, chime: 0.5});
 
+    // TODO: Handle command failure => reset volume to previous value
+    // TODO: Only debounce by volume type
     const handleVolumeSave = useAsyncDebounce(async (type: keyof AudioVolumes, volume: number) => {
         await invokeSafe("audio_set_volume", {volumeType: type, volume: volume});
     });

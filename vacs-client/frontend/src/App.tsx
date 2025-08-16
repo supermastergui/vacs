@@ -23,6 +23,7 @@ import {setupSignalingListeners} from "./listeners/signaling-listener.ts";
 import {useSignalingStore} from "./stores/signaling-store.ts";
 import PhoneButton from "./components/ui/PhoneButton.tsx";
 import RadioPrioButton from "./components/ui/RadioPrioButton.tsx";
+import EndButton from "./components/ui/EndButton.tsx";
 
 function App() {
     const connected = useSignalingStore(state => state.connected);
@@ -84,7 +85,7 @@ function App() {
                         <RadioPrioButton/>
                         <PhoneButton/>
                     </div>
-                    <Button color="cyan" className="text-xl w-44 px-10">END</Button>
+                    <EndButton/>
                 </div>
             </div>
             <ErrorOverlay />

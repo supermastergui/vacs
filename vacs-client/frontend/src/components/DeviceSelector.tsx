@@ -12,6 +12,7 @@ function DeviceSelector(props: DeviceSelectorProps) {
     const [device, setDevice] = useState<string>("");
     const [devices, setDevices] = useState<SelectOption[]>([{value: "", text: "Loading..."}]);
 
+    // TODO: Fix async debounce select html dom state drift
     const handleOnChange = useAsyncDebounce(async (new_device: string) => {
         const previousDeviceName = device;
 
