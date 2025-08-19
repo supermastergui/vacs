@@ -35,16 +35,16 @@ function VolumeSettings() {
                     <div className="w-full flex flex-col items-center">
                         <img src={headphones} className="pt-1 h-12 w-12" alt=""/>
                         <p className="font-bold text-center pt-3 pb-1">Output</p>
-                        <VolumeSlider position={volumes.input}
-                                      setPosition={(position) => setVolumes((prev) => ({...prev, input: position}))}
-                                      savePosition={(position) => handleVolumeSave("input", position)}/>
+                        <VolumeSlider position={volumes.output}
+                                      setPosition={(position) => setVolumes((prev) => ({...prev, output: position}))}
+                                      savePosition={(position) => handleVolumeSave("output", position)}/>
                     </div>
                     <div className="w-full flex flex-col items-center">
                         <img src={mic} className="pt-1 h-12 w-12" alt=""/>
                         <p className="font-bold text-center pt-3 pb-1">Input</p>
-                        <VolumeSlider position={volumes.output}
-                                      setPosition={(position) => setVolumes((prev) => ({...prev, output: position}))}
-                                      savePosition={(position) => handleVolumeSave("output", position)}/>
+                        <VolumeSlider position={volumes.input}
+                                      setPosition={(position) => setVolumes((prev) => ({...prev, input: position}))}
+                                      savePosition={(position) => handleVolumeSave("input", position)}/>
                     </div>
                 </div>
             </div>
