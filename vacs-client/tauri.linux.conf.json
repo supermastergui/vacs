@@ -1,0 +1,11 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "vacs",
+        "width": 1000,
+        "height": 797
+      }
+    ]
+  }
+}
