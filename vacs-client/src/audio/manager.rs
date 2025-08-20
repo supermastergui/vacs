@@ -71,6 +71,23 @@ pub struct AudioManager {
 
 impl AudioManager {
     pub fn new(audio_config: &AudioConfig) -> Result<Self> {
+        let (output, source_ids) = Self::create_audio_output(audio_config)?;
+
+        Ok(Self {
+            output,
+            input: None,
+            source_ids,
+        })
+    }
+
+    pub fn switch_output_device(&mut self, audio_config: &AudioConfig) -> Result<()> {
+        let (output, source_ids) = Self::create_audio_output(audio_config)?;
+        self.output = output;
+        self.source_ids = source_ids;
+        Ok(())
+    }
+
+    fn create_audio_output(audio_config: &AudioConfig) -> Result<(AudioOutput, HashMap<SourceType, AudioSourceId>)> {
         let output_device = Device::new(
             &audio_config.device_config(DeviceType::Output),
             DeviceType::Output,
@@ -112,11 +129,7 @@ impl AudioManager {
             ))),
         );
 
-        Ok(Self {
-            output,
-            input: None,
-            source_ids,
-        })
+        Ok((output, source_ids))
     }
 
     pub fn start(&mut self, source_type: SourceType) {

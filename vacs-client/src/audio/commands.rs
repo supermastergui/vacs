@@ -94,14 +94,19 @@ pub async fn audio_set_device(
         device_type
     );
 
-    // TODO: Switch device in audio manager
-
     let persisted_audio_config: PersistedAudioConfig = {
         let mut state = app_state.lock().await;
 
         match device_type {
             DeviceType::Input => state.config.audio.input_device_name = device_name,
-            DeviceType::Output => state.config.audio.output_device_name = device_name,
+            DeviceType::Output => {
+                state.config.audio.output_device_name = device_name;
+                state
+                    .audio_manager
+                    .lock()
+                    .await
+                    .switch_output_device(&state.config.audio)?;
+            }
         }
 
         state.config.audio.clone().into()
