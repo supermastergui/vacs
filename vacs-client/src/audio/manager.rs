@@ -26,7 +26,7 @@ impl SourceType {
                 unimplemented!("Cannot create waveform source for Opus SourceType")
             }
             SourceType::Ring => WaveformSource::new(
-                WaveformTone::new(497.0, Waveform::Triangle, 0.2), // TODO: tune amp
+                WaveformTone::new(497.0, Waveform::Triangle, 0.2),
                 Duration::from_secs_f32(1.69),
                 None,
                 Duration::from_millis(10),
@@ -34,7 +34,7 @@ impl SourceType {
                 volume,
             ),
             SourceType::Ringback => WaveformSource::new(
-                WaveformTone::new(425.0, Waveform::Sine, 0.2), // TODO: tune amp
+                WaveformTone::new(425.0, Waveform::Sine, 0.2),
                 Duration::from_secs(1),
                 Some(Duration::from_secs(4)),
                 Duration::from_millis(10),
@@ -42,7 +42,7 @@ impl SourceType {
                 volume,
             ),
             SourceType::RingbackOneshot => WaveformSource::new(
-                WaveformTone::new(425.0, Waveform::Sine, 0.2), // TODO: tune amp
+                WaveformTone::new(425.0, Waveform::Sine, 0.2),
                 Duration::from_secs(1),
                 None,
                 Duration::from_millis(10),
@@ -50,7 +50,7 @@ impl SourceType {
                 volume,
             ),
             SourceType::Click => WaveformSource::new(
-                WaveformTone::new(4000.0, Waveform::Sine, 0.2), // TODO: tune amp
+                WaveformTone::new(4000.0, Waveform::Sine, 0.2),
                 Duration::from_millis(20),
                 None,
                 Duration::from_millis(1),
