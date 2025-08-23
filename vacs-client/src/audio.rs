@@ -24,7 +24,7 @@ pub enum VolumeType {
     Input,
     Output,
     Click,
-    Chime
+    Chime,
 }
 
 #[derive(Serialize)]

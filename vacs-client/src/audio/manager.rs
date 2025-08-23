@@ -5,9 +5,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use vacs_audio::input::{AudioInput, InputLevel};
 use vacs_audio::output::AudioOutput;
+use vacs_audio::sources::AudioSourceId;
 use vacs_audio::sources::opus::OpusSource;
 use vacs_audio::sources::waveform::{Waveform, WaveformSource, WaveformTone};
-use vacs_audio::sources::AudioSourceId;
 use vacs_audio::{Device, DeviceType, EncodedAudioFrame};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -111,7 +111,7 @@ impl AudioManager {
     pub fn attach_input_level_meter(
         &mut self,
         audio_config: &AudioConfig,
-        emit: Box::<dyn Fn(InputLevel) + Send>,
+        emit: Box<dyn Fn(InputLevel) + Send>,
     ) -> Result<()> {
         let input_device = Device::new(
             &audio_config.device_config(DeviceType::Input),
@@ -124,7 +124,7 @@ impl AudioManager {
                 audio_config.input_device_volume,
                 audio_config.input_device_volume_amp,
             )
-                .context("Failed to start audio input level meter")?,
+            .context("Failed to start audio input level meter")?,
         );
         Ok(())
     }

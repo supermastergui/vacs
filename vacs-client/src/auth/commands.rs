@@ -26,7 +26,10 @@ pub async fn auth_open_oauth_url(app_state: State<'_, AppState>) -> Result<(), E
 
 #[tauri::command]
 #[vacs_macros::log_err]
-pub async fn auth_check_session(app: AppHandle, app_state: State<'_, AppState>) -> Result<(), Error> {
+pub async fn auth_check_session(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+) -> Result<(), Error> {
     log::debug!("Fetching user info");
     let response = app_state
         .lock()

@@ -1,8 +1,8 @@
 pub(crate) mod commands;
 
+use crate::app::state::AppState;
 use crate::config::BackendEndpoint;
 use crate::error::Error;
-use crate::app::state::AppState;
 use anyhow::Context;
 use tauri::{AppHandle, Emitter, Manager};
 use url::Url;

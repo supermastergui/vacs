@@ -84,7 +84,7 @@ pub async fn signaling_accept_call(
             sdp: "".to_string(), // TODO webrtc/audio/active_call_peer_id
         })
         .await?;
-    
+
     state.audio_manager.stop(SourceType::Ring);
     Ok(())
 }

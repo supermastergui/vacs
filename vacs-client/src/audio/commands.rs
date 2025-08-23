@@ -1,7 +1,7 @@
 use crate::app::state::AppState;
 use crate::audio::manager::SourceType;
 use crate::audio::{AudioDevices, AudioHosts, AudioVolumes, VolumeType};
-use crate::config::{Persistable, PersistedAudioConfig, AUDIO_SETTINGS_FILE_NAME};
+use crate::config::{AUDIO_SETTINGS_FILE_NAME, Persistable, PersistedAudioConfig};
 use crate::error::Error;
 use tauri::{AppHandle, Emitter, State};
 use vacs_audio::{Device, DeviceType};
@@ -222,14 +222,17 @@ pub async fn audio_start_input_level_meter(
     let audio_config = &state.config.audio.clone();
 
     if state.audio_manager.is_input_device_attached() {
-        return Err(Error::AudioDevice("Cannot start input level meter while call is active".to_string()))
+        return Err(Error::AudioDevice(
+            "Cannot start input level meter while call is active".to_string(),
+        ));
     }
 
-    state
-        .audio_manager
-        .attach_input_level_meter(audio_config, Box::new(move |level| {
+    state.audio_manager.attach_input_level_meter(
+        audio_config,
+        Box::new(move |level| {
             app.emit("audio:input-level", level).ok();
-        }))?;
+        }),
+    )?;
 
     Ok(())
 }

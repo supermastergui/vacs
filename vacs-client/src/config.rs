@@ -3,8 +3,8 @@ use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::Duration;
-use vacs_audio::config::AudioDeviceConfig;
 use vacs_audio::DeviceType;
+use vacs_audio::config::AudioDeviceConfig;
 
 /// User-Agent string used for all HTTP requests.
 pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
