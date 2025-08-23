@@ -19,6 +19,7 @@ pub struct AudioOutput {
     _stream: cpal::Stream,
     mixer_ops: Mutex<ringbuf::HeapProd<MixerOp>>,
     next_audio_source_id: atomic::AtomicUsize,
+    output_channels: u16,
 }
 
 impl AudioOutput {
@@ -28,6 +29,8 @@ impl AudioOutput {
 
         let mut mixer = Mixer::default();
         let (ops_prod, mut ops_cons) = ringbuf::HeapRb::<MixerOp>::new(MIXER_OPS_CAPACITY).split();
+
+        let output_channels = device.stream_config.channels();
 
         let stream = device
             .device
@@ -58,6 +61,7 @@ impl AudioOutput {
             _stream: stream,
             mixer_ops: Mutex::new(ops_prod),
             next_audio_source_id: atomic::AtomicUsize::new(0),
+            output_channels,
         })
     }
 
@@ -70,6 +74,10 @@ impl AudioOutput {
 
     pub fn stop(self) {
         drop(self);
+    }
+
+    pub fn output_channels(&self) -> u16 {
+        self.output_channels
     }
 
     #[instrument(level = "trace", skip_all)]

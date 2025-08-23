@@ -1,4 +1,5 @@
 use crate::config::AudioConfig;
+use crate::error::Error;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -189,19 +190,31 @@ impl AudioManager {
 
     // TODO remove linter disable
     #[allow(unused)]
-    pub fn attach_call(&mut self, webrtc_rx: mpsc::Receiver<EncodedAudioFrame>) {
+    pub fn attach_call(
+        &mut self,
+        webrtc_rx: mpsc::Receiver<EncodedAudioFrame>,
+        volume: f32,
+        amp: f32,
+    ) -> Result<(), Error> {
         if self.source_ids.contains_key(&SourceType::Opus) {
             log::warn!("Tried to attach call but a call was already attached");
-            return;
+            return Err(Error::AudioDevice(
+                "Tried to attach call but a call was already attached".to_string(),
+            ));
         }
 
-        // TODO volume & amp + channels
         self.source_ids.insert(
             SourceType::Opus,
-            self.output
-                .add_audio_source(Box::new(OpusSource::from(webrtc_rx))),
+            self.output.add_audio_source(Box::new(OpusSource::new(
+                webrtc_rx,
+                self.output.output_channels(),
+                volume,
+                amp,
+            )?)),
         );
         log::info!("Attached call");
+
+        Ok(())
     }
 
     // TODO remove linter disable
