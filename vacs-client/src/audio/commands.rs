@@ -5,6 +5,8 @@ use crate::config::{Persistable, PersistedAudioConfig, AUDIO_SETTINGS_FILE_NAME}
 use crate::error::Error;
 use tauri::{AppHandle, Emitter, Manager, State};
 use vacs_audio::{Device, DeviceType};
+use crate::app::state::audio::AppStateAudioExt;
+use crate::app::state::webrtc::AppStateWebrtcExt;
 
 #[tauri::command]
 #[vacs_macros::log_err]
@@ -33,7 +35,7 @@ pub async fn audio_set_host(
 ) -> Result<(), Error> {
     let mut state = app_state.lock().await;
 
-    if state.webrtc_manager().active_call_peer_id().is_some() {
+    if state.active_call_peer_id().is_some() {
         return Err(Error::AudioDevice(
             "Cannot set audio device while call is active".to_string(),
         ));
@@ -103,7 +105,7 @@ pub async fn audio_set_device(
 ) -> Result<(), Error> {
     let mut state = app_state.lock().await;
 
-    if state.webrtc_manager().active_call_peer_id().is_some() {
+    if state.active_call_peer_id().is_some() {
         return Err(Error::AudioDevice(
             "Cannot set audio device while call is active".to_string(),
         ));

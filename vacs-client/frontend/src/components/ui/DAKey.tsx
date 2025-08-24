@@ -14,14 +14,13 @@ function DAKey({client}: DAKeyProps) {
     const incomingCalls = useCallStore(state => state.incomingCalls);
     const {
         setOutgoingCall,
-        getSdpFromIncomingCall,
         acceptCall,
         endCall,
         dismissRejectedPeer,
         removePeer
     } = useCallStore(state => state.actions);
 
-    const isCalling = incomingCalls.some(call => call.peerId === client.id);
+    const isCalling = incomingCalls.some(peerId => peerId === client.id);
     const beingCalled = callDisplay?.type === "outgoing" && callDisplay.peerId === client.id;
     const inCall = callDisplay?.type === "accepted" && callDisplay.peerId === client.id;
     const isRejected = callDisplay?.type === "rejected" && callDisplay.peerId === client.id;
@@ -30,15 +29,8 @@ function DAKey({client}: DAKeyProps) {
         if (isCalling) {
             if (callDisplay !== undefined) return;
 
-            const sdp = getSdpFromIncomingCall(client.id);
-
-            if (sdp === undefined) {
-                console.error("Tried to accept call with no SDP present in incoming list");
-                return;
-            }
-
             try {
-                await invokeStrict("signaling_accept_call", {peerId: client.id, sdp: sdp});
+                await invokeStrict("signaling_accept_call", {peerId: client.id});
                 acceptCall(client.id);
             } catch {
             }

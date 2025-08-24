@@ -2,7 +2,6 @@ import {listen, UnlistenFn} from "@tauri-apps/api/event";
 import {useSignalingStore} from "../stores/signaling-store.ts";
 import {ClientInfo} from "../types/client-info.ts";
 import {useCallStore} from "../stores/call-store.ts";
-import {CallOffer} from "../types/call.ts";
 import {useErrorOverlayStore} from "../stores/error-overlay-store.ts";
 
 export function setupSignalingListeners() {
@@ -21,6 +20,7 @@ export function setupSignalingListeners() {
             listen("signaling:disconnected", () => {
                 setConnected(false);
                 setDisplayName("");
+                // TODO cleanup call store
             }),
             listen<ClientInfo[]>("signaling:client-list", (event) => {
                 setClients(event.payload);
@@ -32,10 +32,10 @@ export function setupSignalingListeners() {
                 removeClient(event.payload);
                 removePeer(event.payload);
             }),
-            listen<CallOffer>("signaling:call-offer", (event) => {
+            listen<string>("signaling:call-invite", (event) => {
                 addIncomingCall(event.payload);
             }),
-            listen<string>("signaling:call-answer", (event) => {
+            listen<string>("signaling:call-accept", (event) => {
                 acceptCall(event.payload);
             }),
             listen<string>("signaling:call-end", (event) => {

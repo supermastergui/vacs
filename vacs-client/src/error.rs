@@ -15,6 +15,8 @@ pub enum Error {
     Signaling(#[from] Box<vacs_signaling::error::SignalingError>),
     #[error("HTTP error: {0}")]
     Reqwest(#[from] Box<reqwest::Error>),
+    #[error("WebRTC error: {0}")]
+    WebrtcError(String),
     #[error(transparent)]
     Other(#[from] Box<anyhow::Error>),
 }
@@ -130,6 +132,7 @@ impl From<&Error> for FrontendError {
             Error::Reqwest(err) => FrontendError::new("HTTP error", err.to_string()),
             Error::Network(err) => FrontendError::new("Network error", err),
             Error::Signaling(err) => FrontendError::new("Signaling error", err.to_string()),
+            Error::WebrtcError(err) => FrontendError::new("WebRTC error", err),
             Error::Other(err) => FrontendError::new("Error", err.to_string()),
         }
     }

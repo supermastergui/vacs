@@ -1,3 +1,7 @@
+use crate::app::state::audio::AppStateAudioExt;
+use crate::app::state::http::AppStateHttpExt;
+use crate::app::state::signaling::AppStateSignalingExt;
+use crate::app::state::webrtc::AppStateWebrtcExt;
 use crate::app::state::AppState;
 use crate::audio::manager::SourceType;
 use crate::config::BackendEndpoint;
@@ -19,11 +23,13 @@ pub async fn signaling_connect(app: AppHandle) -> Result<(), Error> {
 #[vacs_macros::log_err]
 pub async fn signaling_disconnect(app: AppHandle) -> Result<(), Error> {
     log::debug!("Disconnecting signaling server");
+
     app.state::<AppState>()
         .lock()
         .await
         .disconnect_signaling(&app)
         .await;
+
     Ok(())
 }
 
@@ -43,13 +49,13 @@ pub async fn signaling_terminate(
         .handle_unauthorized(&app)?;
 
     log::info!("Successfully terminated signaling server session");
+
     Ok(())
 }
 
 #[tauri::command]
 #[vacs_macros::log_err]
 pub async fn signaling_start_call(
-    app: AppHandle,
     app_state: State<'_, AppState>,
     peer_id: String,
 ) -> Result<(), Error> {
@@ -57,11 +63,13 @@ pub async fn signaling_start_call(
 
     let mut state = app_state.lock().await;
 
-    let sdp = state.webrtc_manager().start_call(app, peer_id.clone()).await?;
-
-    state.send_signaling_message(SignalingMessage::CallOffer { peer_id, sdp })
+    state
+        .send_signaling_message(SignalingMessage::CallInvite {
+            peer_id: peer_id.clone(),
+        })
         .await?;
 
+    state.set_outgoing_call_peer_id(Some(peer_id));
     state.audio_manager().restart(SourceType::Ringback);
 
     Ok(())
@@ -72,20 +80,20 @@ pub async fn signaling_start_call(
 pub async fn signaling_accept_call(
     app_state: State<'_, AppState>,
     peer_id: String,
-    _sdp: String,
 ) -> Result<(), Error> {
     log::debug!("Accepting call from {peer_id}");
 
     let mut state = app_state.lock().await;
 
     state
-        .send_signaling_message(SignalingMessage::CallAnswer {
-            peer_id,
-            sdp: "".to_string(), // TODO webrtc/audio/active_call_peer_id
+        .send_signaling_message(SignalingMessage::CallAccept {
+            peer_id: peer_id.clone(),
         })
         .await?;
+    state.remove_incoming_call_peer_id(&peer_id);
 
     state.audio_manager().stop(SourceType::Ring);
+
     Ok(())
 }
 
@@ -99,11 +107,15 @@ pub async fn signaling_end_call(
 
     let mut state = app_state.lock().await;
 
+    state.end_call(&peer_id).await;
+
     state
         .send_signaling_message(SignalingMessage::CallEnd { peer_id })
         .await?;
 
+    state.set_outgoing_call_peer_id(None);
     state.audio_manager().stop(SourceType::Ringback);
+
     Ok(())
 }
 
@@ -115,9 +127,12 @@ pub async fn signaling_reject_call(
 ) -> Result<(), Error> {
     log::debug!("Rejecting call from {peer_id}");
 
-    app_state
-        .lock()
-        .await
-        .send_signaling_message(SignalingMessage::CallReject { peer_id })
-        .await
+    let mut state = app_state.lock().await;
+
+    state
+        .send_signaling_message(SignalingMessage::CallReject { peer_id: peer_id.clone() })
+        .await?;
+    state.remove_incoming_call_peer_id(&peer_id);
+
+    Ok(())
 }

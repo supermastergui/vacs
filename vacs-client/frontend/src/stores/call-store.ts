@@ -1,5 +1,4 @@
 import {create} from "zustand/react";
-import {CallOffer} from "../types/call.ts";
 import {invokeSafe} from "../error.ts";
 
 type CallDisplay = {
@@ -11,13 +10,12 @@ type CallState = {
     blink: boolean,
     blinkTimeoutId: number | undefined,
     callDisplay?: CallDisplay,
-    incomingCalls: CallOffer[],
+    incomingCalls: string[],
     actions: {
         setOutgoingCall: (peerId: string) => void,
         acceptCall: (peerId: string) => void,
         endCall: () => void,
-        addIncomingCall: (offer: CallOffer) => void,
-        getSdpFromIncomingCall: (peerId: string) => string | undefined,
+        addIncomingCall: (peerId: string) => void,
         removePeer: (peerId: string) => void,
         rejectPeer: (peerId: string) => void,
         dismissRejectedPeer: () => void,
@@ -34,7 +32,7 @@ export const useCallStore = create<CallState>()((set, get) => ({
             set({callDisplay: {type: "outgoing", peerId: peerId}});
         },
         acceptCall: (peerId) => {
-            const incomingCalls = get().incomingCalls.filter(offer => offer.peerId !== peerId);
+            const incomingCalls = get().incomingCalls.filter(id => id !== peerId);
 
             if (shouldStopBlinking(incomingCalls, get().callDisplay)) {
                 clearTimeout(get().blinkTimeoutId);
@@ -46,11 +44,12 @@ export const useCallStore = create<CallState>()((set, get) => ({
         endCall: () => {
             set({callDisplay: undefined});
         },
-        addIncomingCall: (offer) => {
-            const incomingCalls = get().incomingCalls.filter(o => o.peerId !== offer.peerId);
+        addIncomingCall: (peerId) => {
+            const incomingCalls = get().incomingCalls.filter(id => id !== peerId);
 
+            // TODO: Maybe move into tauri backend?
             if (incomingCalls.length >= 5) {
-                void invokeSafe("signaling_reject_call", {peerId: offer.peerId});
+                void invokeSafe("signaling_reject_call", {peerId: peerId});
                 return;
             }
 
@@ -58,17 +57,10 @@ export const useCallStore = create<CallState>()((set, get) => ({
                 startBlink(set, get);
             }
 
-            set({incomingCalls: [...incomingCalls, offer]});
-        },
-        getSdpFromIncomingCall: (peerId: string) => {
-            const call = get().incomingCalls.find(c => c.peerId === peerId);
-            if (call === undefined) {
-                return undefined;
-            }
-            return call.sdp;
+            set({incomingCalls: [...incomingCalls, peerId]});
         },
         removePeer: (peerId) => {
-            const incomingCalls = get().incomingCalls.filter(offer => offer.peerId !== peerId);
+            const incomingCalls = get().incomingCalls.filter(id => id !== peerId);
 
             if (incomingCalls.length === 0) {
                 clearTimeout(get().blinkTimeoutId);
@@ -106,7 +98,7 @@ export const useCallStore = create<CallState>()((set, get) => ({
     },
 }));
 
-const shouldStopBlinking = (incomingCalls: CallOffer[], callDisplay?: CallDisplay) => {
+const shouldStopBlinking = (incomingCalls: string[], callDisplay?: CallDisplay) => {
     return incomingCalls.length === 0 && (callDisplay === undefined || callDisplay.type !== "rejected");
 }
 

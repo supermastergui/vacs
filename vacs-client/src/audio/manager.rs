@@ -6,9 +6,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use vacs_audio::input::{AudioInput, InputLevel};
 use vacs_audio::output::AudioOutput;
-use vacs_audio::sources::AudioSourceId;
 use vacs_audio::sources::opus::OpusSource;
 use vacs_audio::sources::waveform::{Waveform, WaveformSource, WaveformTone};
+use vacs_audio::sources::AudioSourceId;
 use vacs_audio::{Device, DeviceType, EncodedAudioFrame};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -86,7 +86,6 @@ impl AudioManager {
         Ok(())
     }
 
-    // TODO remove linter disable
     #[allow(unused)]
     pub fn attach_input_device(
         &mut self,
@@ -217,12 +216,11 @@ impl AudioManager {
     }
 
     pub fn detach_call_output(&mut self) {
-        self.output
-            .remove_audio_source(self.source_ids[&SourceType::Opus]);
-        if self.source_ids.remove(&SourceType::Opus).is_some() {
-            log::info!("Detached call");
+        if let Some(source_id) = self.source_ids.remove(&SourceType::Opus) {
+            self.output.remove_audio_source(source_id);
+            log::info!("Detached call output");
         } else {
-            log::info!("Tried to detach call but no call was attached");
+            log::info!("Tried to detach call output but no call was attached");
         }
     }
 

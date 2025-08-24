@@ -1,5 +1,8 @@
 pub(crate) mod commands;
 
+use crate::app::state::audio::AppStateAudioExt;
+use crate::app::state::signaling::AppStateSignalingExt;
+use crate::app::state::webrtc::AppStateWebrtcExt;
 use crate::app::state::AppState;
 use crate::audio::manager::SourceType;
 use crate::config::{WS_LOGIN_TIMEOUT, WS_READY_TIMEOUT};
@@ -169,65 +172,91 @@ impl Connection {
 
     async fn handle_signaling_message(msg: SignalingMessage, app: &AppHandle) {
         match msg {
-            ref call_offer @ SignalingMessage::CallOffer { ref peer_id, .. } => {
-                log::trace!("Call offer received from {peer_id}");
-                app.emit("signaling:call-offer", call_offer).ok();
-                app.state::<AppState>()
-                    .lock()
-                    .await
-                    .audio_manager()
-                    .restart(SourceType::Ring);
+            SignalingMessage::CallInvite { peer_id } => {
+                log::trace!("Call invite received from {peer_id}");
+
+                let state = app.state::<AppState>();
+                let mut state = state.lock().await;
+
+                state.add_incoming_call_peer_id(&peer_id);
+                app.emit("signaling:call-invite", &peer_id).ok();
+
+                state.audio_manager().restart(SourceType::Ring);
             }
-            SignalingMessage::CallAnswer { peer_id, .. } => {
+            SignalingMessage::CallAccept { peer_id } => {
+                log::trace!("Call accept received from {peer_id}");
+
+                let state = app.state::<AppState>();
+                let mut state = state.lock().await;
+
+                if state.remove_outgoing_call_peer_id(&peer_id) {
+                    app.emit("signaling:call-accept", peer_id.clone()).ok();
+
+                    let res = match state.init_call(app.clone(), peer_id.clone(), None).await {
+                        Ok(sdp) => {
+                            state
+                                .send_signaling_message(SignalingMessage::CallOffer {
+                                    peer_id,
+                                    sdp,
+                                })
+                                .await
+                        }
+                        Err(err) => {
+                            log::warn!("Failed to start call: {err:?}");
+                            state
+                                .send_signaling_message(SignalingMessage::CallEnd { peer_id })
+                                .await
+                        }
+                    };
+                    if let Err(err) = res {
+                        log::warn!("Failed to send call message: {err:?}");
+                    }
+                } else {
+                    log::warn!("Received call accept message for peer that is not set as outgoing");
+                }
+            }
+            SignalingMessage::CallOffer { peer_id, sdp } => {
+                log::trace!("Call offer received from {peer_id}");
+
+                let state = app.state::<AppState>();
+                let mut state = state.lock().await;
+
+                let res = match state
+                    .init_call(app.clone(), peer_id.clone(), Some(sdp))
+                    .await
+                {
+                    Ok(sdp) => {
+                        state
+                            .send_signaling_message(SignalingMessage::CallAnswer { peer_id, sdp })
+                            .await
+                    }
+                    Err(err) => {
+                        log::warn!("Failed to accept call offer: {err:?}");
+                        state
+                            .send_signaling_message(SignalingMessage::CallEnd { peer_id })
+                            .await
+                    }
+                };
+
+                if let Err(err) = res {
+                    log::warn!("Failed to send call message: {err:?}");
+                }
+            }
+            SignalingMessage::CallAnswer { peer_id, sdp } => {
                 log::trace!("Call answer received from {peer_id}");
 
                 let state = app.state::<AppState>();
                 let mut state = state.lock().await;
 
-                // TODO webrtc & audio
-
-                // let (webrtc_tx, webrtc_rx) = mpsc::channel(256);
-                //
-                // let audio_config = state.config.audio.clone();
-                //
-                // if let Err(err) = state
-                //     .audio_manager()
-                //     .attach_input_device(&audio_config, webrtc_tx)
-                // {
-                //     log::warn!("Failed to attach input device: {err:?}");
-                //
-                //     if let Err(e) = state
-                //         .send_signaling_message(SignalingMessage::CallEnd { peer_id })
-                //         .await
-                //     {
-                //         log::warn!(
-                //             "Failed to send call end message after failing to attach input device: {e:?}"
-                //         );
-                //     }
-                //
-                //     app.emit::<FrontendError>(
-                //         "error",
-                //         Error::AudioDevice("Failed to start input capture".to_string()).into(),
-                //     )
-                //     .ok();
-                //
-                //     return;
-                // }
-                // log::info!("Attached input device");
-
-                //state.set_active_call_peer_id(Some(peer_id.clone()));
-
-                app.emit("signaling:call-answer", peer_id).ok();
-                state.audio_manager().stop(SourceType::Ringback);
-            }
-            SignalingMessage::CallReject { peer_id } => {
-                log::trace!("Call reject received from {peer_id}");
-                app.emit("signaling:call-reject", peer_id).ok();
-                app.state::<AppState>()
-                    .lock()
-                    .await
-                    .audio_manager()
-                    .stop(SourceType::Ringback);
+                if let Err(err) = state.accept_call_answer(&peer_id, sdp).await {
+                    log::warn!("Failed to accept answer: {err:?}");
+                    if let Err(err) = state
+                        .send_signaling_message(SignalingMessage::CallEnd { peer_id })
+                        .await
+                    {
+                        log::warn!("Failed to send call end message: {err:?}");
+                    }
+                };
             }
             SignalingMessage::CallEnd { peer_id } => {
                 log::trace!("Call end received from {peer_id}");
@@ -235,35 +264,33 @@ impl Connection {
                 let state = app.state::<AppState>();
                 let mut state = state.lock().await;
 
-                if state.webrtc_manager().is_active_call(&peer_id) {
-                    state.audio_manager().detach_call_output();
-                    state.audio_manager().detach_input_device();
+                if !state.end_call(&peer_id).await {
+                    log::debug!("Received call end message for peer that is not active");
                 }
 
-                let found = state.webrtc_manager().end_call(&peer_id).await;
+                state.remove_incoming_call_peer_id(&peer_id);
 
-                if !found {
-                    log::warn!("Received call end message for peer that is not active");
-                    return;
+                app.emit("signaling:call-end", &peer_id).ok();
+            }
+            SignalingMessage::CallReject { peer_id } => {
+                log::trace!("Call reject received from {peer_id}");
+
+                let state = app.state::<AppState>();
+                let mut state = state.lock().await;
+
+                if state.remove_outgoing_call_peer_id(&peer_id) {
+                    app.emit("signaling:call-reject", peer_id).ok();
+                } else {
+                    log::warn!("Received call reject message for peer that is not set as outgoing");
                 }
-
-                app.emit("signaling:call-end", peer_id).ok();
-                app.state::<AppState>()
-                    .lock()
-                    .await
-                    .audio_manager()
-                    .stop(SourceType::Ring);
             }
             SignalingMessage::CallIceCandidate { peer_id, candidate } => {
                 log::trace!("ICE candidate received from {peer_id}");
 
                 let state = app.state::<AppState>();
-                let mut state = state.lock().await;
+                let state = state.lock().await;
 
-                state
-                    .webrtc_manager()
-                    .add_remote_ice_candidate(&peer_id, candidate)
-                    .await;
+                state.set_remote_ice_candidate(&peer_id, candidate).await;
             }
             SignalingMessage::PeerNotFound { peer_id } => {
                 log::trace!("Received peer not found: {peer_id}");
@@ -271,32 +298,43 @@ impl Connection {
                 let state = app.state::<AppState>();
                 let mut state = state.lock().await;
 
-                if !state.webrtc_manager().is_active_call(&peer_id) {
-                    log::warn!("Received call end message for peer that is not active");
+                // Stop any active webrtc call
+                if !state.end_call(&peer_id).await {
+                    log::warn!("Received peer not found message for peer that is not active");
                     return;
                 }
 
-                // TODO end call in webrtc/audio
-                //state.webrtc_manager().set_active_call_peer_id(None);
-                drop(state);
+                // Remove from outgoing and incoming states
+                state.remove_outgoing_call_peer_id(&peer_id);
+                state.remove_incoming_call_peer_id(&peer_id);
 
                 app.emit("signaling:peer-not-found", peer_id).ok();
             }
             SignalingMessage::ClientConnected { client } => {
                 log::trace!("Client connected: {client:?}");
+
                 app.emit("signaling:client-connected", client).ok();
             }
             SignalingMessage::ClientDisconnected { id } => {
                 log::trace!("Client disconnected: {id:?}");
+
+                let state = app.state::<AppState>();
+                let mut state = state.lock().await;
+
+                state.remove_incoming_call_peer_id(&id);
+                state.remove_outgoing_call_peer_id(&id);
+
                 app.emit("signaling:client-disconnected", id).ok();
             }
             SignalingMessage::ClientList { clients } => {
                 log::trace!("Received client list: {} clients connected", clients.len());
+
                 app.emit("signaling:client-list", clients).ok();
             }
             SignalingMessage::Error { reason, peer_id } => match reason {
                 ErrorReason::MalformedMessage => {
                     log::warn!("Received malformed error message from signaling server");
+
                     app.emit::<FrontendError>(
                         "error",
                         FrontendError::new_with_timeout(
@@ -309,6 +347,7 @@ impl Connection {
                 }
                 ErrorReason::Internal(msg) => {
                     log::warn!("Received internal error message from signaling server");
+
                     app.emit::<FrontendError>(
                         "error",
                         FrontendError::new("Signaling error", format!("Internal: {msg}")),
@@ -320,6 +359,7 @@ impl Connection {
                         "Received peer connection error from signaling server with peer {}",
                         peer_id.unwrap_or("NONE".to_string())
                     );
+
                     app.emit::<FrontendError>(
                         "error",
                         FrontendError::new("Signaling error", "Peer connection error".to_string()),
@@ -329,6 +369,7 @@ impl Connection {
                 }
                 ErrorReason::UnexpectedMessage(msg) => {
                     log::warn!("Received unexpected message error from signaling server");
+
                     app.emit::<FrontendError>(
                         "error",
                         FrontendError::new("Signaling error", format!("Unexpected message: {msg}")),

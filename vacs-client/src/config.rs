@@ -13,6 +13,7 @@ pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CAR
 pub const WS_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const WS_READY_TIMEOUT: Duration = Duration::from_secs(10);
 pub const AUDIO_SETTINGS_FILE_NAME: &str = "audio.toml";
+pub const ENCODED_AUDIO_FRAME_BUFFER_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
