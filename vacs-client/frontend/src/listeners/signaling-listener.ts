@@ -6,7 +6,7 @@ import {useErrorOverlayStore} from "../stores/error-overlay-store.ts";
 
 export function setupSignalingListeners() {
     const { setConnected, setDisplayName, setClients, addClient, removeClient } = useSignalingStore.getState();
-    const { addIncomingCall, removePeer, rejectPeer, acceptCall } = useCallStore.getState().actions;
+    const { addIncomingCall, removePeer, rejectPeer, acceptCall, reset: resetCallStore } = useCallStore.getState().actions;
     const { open: openErrorOverlay } = useErrorOverlayStore.getState();
 
     const unlistenFns: (Promise<UnlistenFn>)[] = [];
@@ -20,7 +20,7 @@ export function setupSignalingListeners() {
             listen("signaling:disconnected", () => {
                 setConnected(false);
                 setDisplayName("");
-                // TODO cleanup call store
+                resetCallStore();
             }),
             listen<ClientInfo[]>("signaling:client-list", (event) => {
                 setClients(event.payload);

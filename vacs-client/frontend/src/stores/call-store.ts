@@ -19,6 +19,7 @@ type CallState = {
         removePeer: (peerId: string) => void,
         rejectPeer: (peerId: string) => void,
         dismissRejectedPeer: () => void,
+        reset: () => void,
     },
 };
 
@@ -94,6 +95,10 @@ export const useCallStore = create<CallState>()((set, get) => ({
                 clearTimeout(get().blinkTimeoutId);
                 set({blink: false, blinkTimeoutId: undefined, incomingCalls: []});
             }
+        },
+        reset: () => {
+            clearTimeout(get().blinkTimeoutId);
+            set({callDisplay: undefined, incomingCalls: [], blink: false, blinkTimeoutId: undefined})
         }
     },
 }));
