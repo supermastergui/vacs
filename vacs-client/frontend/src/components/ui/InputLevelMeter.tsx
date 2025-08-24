@@ -13,6 +13,8 @@ function InputLevelMeter() {
     const handleOnClick = async () => {
         if (isCallActive) return; // Cannot start input level meter while call is active
 
+        void invokeSafe("audio_play_ui_click");
+
         if (unlistenFn !== undefined) {
             await invokeSafe("audio_stop_input_level_meter");
 

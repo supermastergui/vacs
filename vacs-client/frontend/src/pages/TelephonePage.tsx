@@ -4,6 +4,7 @@ import {ComponentChildren} from "preact";
 import "../styles/telephone-page.css";
 import DialPad from "../components/DialPad.tsx";
 import CallList from "../components/CallList.tsx";
+import {invokeSafe} from "../error.ts";
 
 type Page = "dir" | "call-list" | "dial-pad";
 
@@ -75,7 +76,10 @@ function TelephonePageButton(props: TelephonePageButtonProps) {
                 "disabled:relative disabled:cursor-default disabled:border-gray-600",
                 "active-telephone-page",
                 "not-disabled:active:[&>*]:translate-y-[1px] not-disabled:active:[&>*]:translate-x-[1px]")}
-            onClick={() => props.setPage(props.page)}
+            onClick={() => {
+                void invokeSafe("audio_play_ui_click");
+                props.setPage(props.page);
+            }}
             disabled={isActive}
         >
             {props.children}
