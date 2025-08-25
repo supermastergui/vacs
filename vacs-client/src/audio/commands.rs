@@ -4,7 +4,7 @@ use crate::audio::{AudioDevices, AudioHosts, AudioVolumes, VolumeType};
 use crate::config::{Persistable, PersistedAudioConfig, AUDIO_SETTINGS_FILE_NAME};
 use crate::error::Error;
 use tauri::{AppHandle, Emitter, Manager, State};
-use vacs_audio::{Device, DeviceType};
+use vacs_audio::{Device, DeviceSelector, DeviceType};
 use crate::app::state::audio::AppStateAudioExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
 
@@ -13,12 +13,12 @@ use crate::app::state::webrtc::AppStateWebrtcExt;
 pub async fn audio_get_hosts(app_state: State<'_, AppState>) -> Result<AudioHosts, Error> {
     log::info!("Getting audio hosts");
 
-    let mut selected = app_state.lock().await.config.audio.host_name.to_string();
+    let mut selected = app_state.lock().await.config.audio.host_name.clone().unwrap_or_default();
     if selected.is_empty() {
-        selected = Device::find_default_host();
+        selected = DeviceSelector::default_host_name();
     }
 
-    let hosts = Device::find_all_hosts();
+    let hosts = DeviceSelector::all_host_names();
 
     Ok(AudioHosts {
         selected,
@@ -41,10 +41,12 @@ pub async fn audio_set_host(
         ));
     }
 
+    // TODO actually switch audio host
+
     log::info!("Setting audio host (name: {host_name})");
 
     let persisted_audio_config: PersistedAudioConfig = {
-        state.config.audio.host_name = host_name;
+        state.config.audio.host_name = Some(host_name).filter(|x|!x.is_empty());
         state.config.audio.clone().into()
     };
 
@@ -65,28 +67,28 @@ pub async fn audio_get_devices(
 ) -> Result<AudioDevices, Error> {
     log::info!("Getting audio devices (type: {:?})", device_type);
 
+    let state = app_state
+        .lock()
+        .await;
+
     let selected = match device_type {
-        DeviceType::Input => app_state
-            .lock()
-            .await
+        DeviceType::Input => state
             .config
             .audio
             .input_device_name
-            .to_string(),
-        DeviceType::Output => app_state
-            .lock()
-            .await
+            .clone()
+            .unwrap_or_default(),
+        DeviceType::Output => state
             .config
             .audio
             .output_device_name
-            .to_string(),
+            .clone()
+            .unwrap_or_default(),
     };
 
-    let default_device = Device::find_default(device_type)?.device_name();
-    let devices: Vec<String> = Device::find_all(device_type)?
-        .into_iter()
-        .map(|device| device.device_name())
-        .collect();
+    let host = state.config.audio.host_name.as_deref();
+    let default_device = DeviceSelector::default_device_name(host, device_type)?;
+    let devices: Vec<String> = DeviceSelector::all_device_names(host, device_type)?;
 
     Ok(AudioDevices {
         selected,
@@ -117,6 +119,7 @@ pub async fn audio_set_device(
         device_type
     );
 
+    let device_name = Some(device_name).filter(|x|!x.is_empty());
     let persisted_audio_config: PersistedAudioConfig = {
         match device_type {
             DeviceType::Input => state.config.audio.input_device_name = device_name,

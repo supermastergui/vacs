@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use vacs_audio::{Device, DeviceType};
+use vacs_audio::{Device, DeviceSelector, DeviceType};
 
 pub struct AppStateInner {
     pub config: AppConfig,
@@ -39,11 +39,31 @@ impl AppStateInner {
         );
         let config = AppConfig::parse(&config_dir)?;
 
+        // TODO handle is_fallback and update config accordingly
+
+        match DeviceSelector::open(config.audio.host_name.as_deref(), config.audio.output_device_name.as_deref(), DeviceType::Output) {
+            Ok(device) => {
+                log::info!("Using output device: {device:?}");
+            }
+            Err(err) => {
+                log::warn!("Open would crash the app, lol! Error: {err:?}");
+            }
+        }
+
+        match DeviceSelector::open(config.audio.host_name.as_deref(), config.audio.input_device_name.as_deref(), DeviceType::Input) {
+            Ok(device) => {
+                log::info!("Using input device: {device:?}");
+            }
+            Err(err) => {
+                log::warn!("Open would crash the app, lol! Error: {err:?}");
+            }
+        }
+
         // TODO remove/only log in case of init errors
-        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name, &DeviceType::Output) {
+        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name.as_deref().unwrap_or(""), &DeviceType::Output) {
             log::warn!("Failed to list all output devices with supported configs: {err:?}");
         }
-        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name, &DeviceType::Input) {
+        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name.as_deref().unwrap_or(""), &DeviceType::Input) {
             log::warn!("Failed to list all input devices with supported configs: {err:?}");
         }
 
@@ -53,7 +73,7 @@ impl AppStateInner {
                 log::warn!("Failed to initialize audio manager with read config, falling back to default output device. Error: {err:?}");
 
                 let mut audio_config = config.audio.clone();
-                audio_config.output_device_name = "".to_string();
+                audio_config.output_device_name = None;
 
                 let audio_manager = AudioManager::new(&audio_config)?;
 

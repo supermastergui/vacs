@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
-use vacs_audio::DeviceType;
 use vacs_audio::config::AudioDeviceConfig;
+use vacs_audio::DeviceType;
 use vacs_webrtc::config::WebrtcConfig;
 
 /// User-Agent string used for all HTTP requests.
@@ -121,9 +121,9 @@ impl Default for BackendEndpointsConfigs {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioConfig {
-    pub host_name: String, // Name of audio backend host, empty string means default host
-    pub input_device_name: String, // Empty string means default device
-    pub output_device_name: String, // Empty string means default device
+    pub host_name: Option<String>, // Name of audio backend host, None means default host
+    pub input_device_name: Option<String>, // None means default device
+    pub output_device_name: Option<String>, // None means default device
     pub input_device_volume: f32,
     pub input_device_volume_amp: f32,
     pub output_device_volume: f32,
@@ -135,9 +135,9 @@ pub struct AudioConfig {
 impl Default for AudioConfig {
     fn default() -> Self {
         Self {
-            host_name: String::new(),
-            input_device_name: String::new(),
-            output_device_name: String::new(),
+            host_name: None,
+            input_device_name: None,
+            output_device_name: None,
             input_device_volume: 0.5,
             input_device_volume_amp: 4.0,
             output_device_volume: 0.5,
@@ -151,26 +151,10 @@ impl Default for AudioConfig {
 impl AudioConfig {
     pub fn device_config(&self, device_type: DeviceType) -> AudioDeviceConfig {
         AudioDeviceConfig {
-            host_name: if self.host_name.is_empty() {
-                None
-            } else {
-                Some(self.host_name.to_string())
-            },
+            host_name: self.host_name.clone(),
             device_name: match device_type {
-                DeviceType::Output => {
-                    if self.output_device_name.is_empty() {
-                        None
-                    } else {
-                        Some(self.output_device_name.to_string())
-                    }
-                }
-                DeviceType::Input => {
-                    if self.input_device_name.is_empty() {
-                        None
-                    } else {
-                        Some(self.input_device_name.to_string())
-                    }
-                }
+                DeviceType::Output => self.output_device_name.clone(),
+                DeviceType::Input => self.input_device_name.clone()
             },
             channels: match device_type {
                 DeviceType::Output => 2,
