@@ -58,7 +58,7 @@ impl StreamDevice {
         &self,
         data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         D: FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static,
         E: FnMut(cpal::StreamError) + Send + 'static,
@@ -66,20 +66,23 @@ impl StreamDevice {
         debug_assert!(matches!(self.device_type, DeviceType::Input));
 
         match self.sample_format {
-            SampleFormat::F32 => self
-                .device
-                .build_input_stream::<f32, _, _>(&self.config, data_callback, error_callback, None)
-                .map_err(Into::into),
+            SampleFormat::F32 => self.device.build_input_stream::<f32, _, _>(
+                &self.config,
+                data_callback,
+                error_callback,
+                None,
+            ),
             SampleFormat::I16 => {
                 self.build_f32_input_stream::<i16, _, _>(data_callback, error_callback)
             }
             SampleFormat::U16 => {
                 self.build_f32_input_stream::<u16, _, _>(data_callback, error_callback)
             }
-            other => Err(anyhow::anyhow!(
-                "Unsupported input sample format: {:?}",
-                other
-            )),
+            other => Err(cpal::BuildStreamError::BackendSpecific {
+                err: cpal::BackendSpecificError {
+                    description: format!("Unsupported input sample format: {other:?}"),
+                },
+            }),
         }
     }
 
@@ -87,7 +90,7 @@ impl StreamDevice {
         &self,
         mut data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: Sample<Float = f32> + cpal::SizedSample + 'static,
         D: FnMut(&[f32], &cpal::InputCallbackInfo) + Send + 'static,
@@ -98,23 +101,21 @@ impl StreamDevice {
             buf.borrow_mut().reserve(n as usize);
         }
 
-        self.device
-            .build_input_stream::<T, _, _>(
-                &self.config,
-                move |input: &[T], info| {
-                    let mut b = buf.borrow_mut();
-                    if b.len() != input.len() {
-                        b.resize(input.len(), 0.0f32);
-                    }
-                    for (dst, &src) in b.iter_mut().zip(input.iter()) {
-                        *dst = src.to_float_sample();
-                    }
-                    data_callback(&b, info);
-                },
-                error_callback,
-                None,
-            )
-            .map_err(Into::into)
+        self.device.build_input_stream::<T, _, _>(
+            &self.config,
+            move |input: &[T], info| {
+                let mut b = buf.borrow_mut();
+                if b.len() != input.len() {
+                    b.resize(input.len(), 0.0f32);
+                }
+                for (dst, &src) in b.iter_mut().zip(input.iter()) {
+                    *dst = src.to_float_sample();
+                }
+                data_callback(&b, info);
+            },
+            error_callback,
+            None,
+        )
     }
 
     #[instrument(level = "trace", skip(data_callback, error_callback), err)]
@@ -122,7 +123,7 @@ impl StreamDevice {
         &self,
         data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         D: FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static,
         E: FnMut(cpal::StreamError) + Send + 'static,
@@ -130,20 +131,23 @@ impl StreamDevice {
         debug_assert!(matches!(self.device_type, DeviceType::Output));
 
         match self.sample_format {
-            SampleFormat::F32 => self
-                .device
-                .build_output_stream::<f32, _, _>(&self.config, data_callback, error_callback, None)
-                .map_err(Into::into),
+            SampleFormat::F32 => self.device.build_output_stream::<f32, _, _>(
+                &self.config,
+                data_callback,
+                error_callback,
+                None,
+            ),
             SampleFormat::I16 => {
                 self.build_f32_output_stream::<i16, _, _>(data_callback, error_callback)
             }
             SampleFormat::U16 => {
                 self.build_f32_output_stream::<u16, _, _>(data_callback, error_callback)
             }
-            other => Err(anyhow::anyhow!(
-                "Unsupported output sample format: {:?}",
-                other
-            )),
+            other => Err(cpal::BuildStreamError::BackendSpecific {
+                err: cpal::BackendSpecificError {
+                    description: format!("Unsupported output sample format: {other:?}"),
+                },
+            }),
         }
     }
 
@@ -151,7 +155,7 @@ impl StreamDevice {
         &self,
         mut data_callback: D,
         error_callback: E,
-    ) -> Result<cpal::Stream>
+    ) -> Result<cpal::Stream, cpal::BuildStreamError>
     where
         T: cpal::SizedSample + cpal::FromSample<f32> + 'static,
         D: FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static,
@@ -162,23 +166,21 @@ impl StreamDevice {
             buf.borrow_mut().reserve(n as usize);
         }
 
-        self.device
-            .build_output_stream::<T, _, _>(
-                &self.config,
-                move |output: &mut [T], info| {
-                    let mut b = buf.borrow_mut();
-                    if b.len() != output.len() {
-                        b.resize(output.len(), 0.0f32);
-                    }
-                    data_callback(&mut b, info);
-                    for (dst, &src) in output.iter_mut().zip(b.iter()) {
-                        *dst = src.to_sample::<T>();
-                    }
-                },
-                error_callback,
-                None,
-            )
-            .map_err(Into::into)
+        self.device.build_output_stream::<T, _, _>(
+            &self.config,
+            move |output: &mut [T], info| {
+                let mut b = buf.borrow_mut();
+                if b.len() != output.len() {
+                    b.resize(output.len(), 0.0f32);
+                }
+                data_callback(&mut b, info);
+                for (dst, &src) in output.iter_mut().zip(b.iter()) {
+                    *dst = src.to_sample::<T>();
+                }
+            },
+            error_callback,
+            None,
+        )
     }
 
     pub(crate) fn resampler(&self) -> Result<Option<SincFixedIn<f32>>> {

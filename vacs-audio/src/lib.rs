@@ -4,6 +4,7 @@ mod dsp;
 pub(crate) mod mixer;
 pub mod sources;
 pub mod stream;
+pub mod error;
 
 pub use device::Device;
 pub use device::DeviceSelector;

@@ -1,5 +1,6 @@
 use crate::device::StreamDevice;
 use crate::dsp::downmix_interleaved_to_mono;
+use crate::error::AudioStartError;
 use crate::{DeviceType, EncodedAudioFrame, FRAME_SIZE, TARGET_SAMPLE_RATE};
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -43,7 +44,7 @@ impl CaptureStream {
         tx: mpsc::Sender<EncodedAudioFrame>,
         mut volume: f32,
         amp: f32,
-    ) -> Result<Self> {
+    ) -> Result<Self, AudioStartError> {
         tracing::debug!("Starting input capture stream");
         debug_assert!(matches!(device.device_type, DeviceType::Input));
 
@@ -57,50 +58,48 @@ impl CaptureStream {
 
         let mut mono_buf: Vec<f32> = Vec::with_capacity(MIN_INPUT_BUFFER_SIZE);
 
-        let stream = device
-            .build_input_stream(
-                move |input: &[f32], _| {
-                    // downmix to mono if necessary
-                    let mono: &[f32] = if device.config.channels > 1 {
-                        downmix_interleaved_to_mono(
-                            input,
-                            device.config.channels as usize,
-                            &mut mono_buf,
-                        );
-                        &mono_buf
-                    } else {
-                        input
-                    };
+        let stream = device.build_input_stream(
+            move |input: &[f32], _| {
+                // downmix to mono if necessary
+                let mono: &[f32] = if device.config.channels > 1 {
+                    downmix_interleaved_to_mono(
+                        input,
+                        device.config.channels as usize,
+                        &mut mono_buf,
+                    );
+                    &mono_buf
+                } else {
+                    input
+                };
 
-                    let muted = muted_clone.load(Ordering::Relaxed);
-                    let mut overflows = 0usize;
-                    for &sample in mono {
-                        // apply muting and push into input buffer to audio processing
-                        if input_prod
-                            .try_push(if muted { 0.0f32 } else { sample })
-                            .is_err()
-                        {
-                            overflows += 1;
-                            if overflows % 100 == 1 {
-                                tracing::trace!(
-                                    ?overflows,
-                                    "Input buffer overflow (tail samples dropped)"
-                                );
-                            }
+                let muted = muted_clone.load(Ordering::Relaxed);
+                let mut overflows = 0usize;
+                for &sample in mono {
+                    // apply muting and push into input buffer to audio processing
+                    if input_prod
+                        .try_push(if muted { 0.0f32 } else { sample })
+                        .is_err()
+                    {
+                        overflows += 1;
+                        if overflows % 100 == 1 {
+                            tracing::trace!(
+                                ?overflows,
+                                "Input buffer overflow (tail samples dropped)"
+                            );
                         }
                     }
-                    if overflows > 0 {
-                        tracing::warn!(?overflows, "Dropped input samples during this callback");
-                    }
-                },
-                |err| {
-                    tracing::warn!(?err, "CPAL capture stream error");
-                },
-            )
-            .context("Failed to build input stream")?;
+                }
+                if overflows > 0 {
+                    tracing::warn!(?overflows, "Dropped input samples during this callback");
+                }
+            },
+            |err| {
+                tracing::warn!(?err, "CPAL capture stream error");
+            },
+        )?;
 
         tracing::debug!("Starting capture on input stream");
-        stream.play().context("Failed to play input stream")?;
+        stream.play()?;
 
         let cancel = CancellationToken::new();
         let cancel_clone = cancel.child_token();
@@ -206,7 +205,7 @@ impl CaptureStream {
         emit: Box<dyn Fn(InputLevel) + Send>,
         mut volume: f32,
         amp: f32,
-    ) -> Result<Self> {
+    ) -> Result<Self, AudioStartError> {
         tracing::debug!("Starting input capture stream level meter");
 
         let mut level_meter = InputLevelMeter::new(device.sample_rate() as f32);
@@ -214,34 +213,30 @@ impl CaptureStream {
         let (ops_prod, mut ops_cons) =
             HeapRb::<InputVolumeOp>::new(INPUT_VOLUME_OPS_CAPACITY).split();
 
-        let stream = device
-            .build_input_stream(
-                move |input: &[f32], _| {
-                    for _ in 0..INPUT_VOLUME_OPS_PER_DATA_CALLBACK {
-                        if let Some(op) = ops_cons.try_pop() {
-                            op(&mut volume);
-                        } else {
-                            break;
-                        }
+        let stream = device.build_input_stream(
+            move |input: &[f32], _| {
+                for _ in 0..INPUT_VOLUME_OPS_PER_DATA_CALLBACK {
+                    if let Some(op) = ops_cons.try_pop() {
+                        op(&mut volume);
+                    } else {
+                        break;
                     }
+                }
 
-                    let gain = amp * volume;
-                    for &sample in input {
-                        if let Some(level) = level_meter.push_sample(sample * gain) {
-                            emit(level);
-                        }
+                let gain = amp * volume;
+                for &sample in input {
+                    if let Some(level) = level_meter.push_sample(sample * gain) {
+                        emit(level);
                     }
-                },
-                |err| {
-                    tracing::warn!(?err, "CPAL input stream error");
-                },
-            )
-            .context("Failed to build input stream")?;
+                }
+            },
+            |err| {
+                tracing::warn!(?err, "CPAL input stream error");
+            },
+        )?;
 
         tracing::trace!("Starting level meter capture on input stream");
-        stream
-            .play()
-            .context("Failed to play level meter input stream")?;
+        stream.play()?;
 
         tracing::info!("Input level meter capture stream started");
         Ok(Self {

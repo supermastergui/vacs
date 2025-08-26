@@ -1,8 +1,9 @@
 use crate::device::StreamDevice;
+use crate::error::AudioStartError;
 use crate::mixer::Mixer;
 use crate::sources::{AudioSource, AudioSourceId};
 use crate::DeviceType;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use cpal::traits::StreamTrait;
 use parking_lot::Mutex;
 use ringbuf::consumer::Consumer;
@@ -28,7 +29,7 @@ pub struct PlaybackStream {
 }
 
 impl PlaybackStream {
-    pub fn start(device: StreamDevice) -> Result<Self> {
+    pub fn start(device: StreamDevice) -> Result<Self, AudioStartError> {
         tracing::debug!("Starting input capture stream");
         debug_assert!(matches!(device.device_type, DeviceType::Output));
 
@@ -38,26 +39,25 @@ impl PlaybackStream {
         let deafened = Arc::new(AtomicBool::new(false));
         let deafened_clone = deafened.clone();
 
-        let stream = device
-            .build_output_stream(
-                move |output, _| {
-                    for _ in 0..MIXER_OPS_PER_DATA_CALLBACK {
-                        if let Some(op) = ops_cons.try_pop() {
-                            op(&mut mixer);
-                        } else {
-                            break;
-                        }
+        let stream = device.build_output_stream(
+            move |output, _| {
+                for _ in 0..MIXER_OPS_PER_DATA_CALLBACK {
+                    if let Some(op) = ops_cons.try_pop() {
+                        op(&mut mixer);
+                    } else {
+                        break;
                     }
-                    mixer.mix(output);
-                },
-                |err| {
-                    tracing::warn!(?err, "CPAL output stream error");
-                },
-            )
-            .context("Failed to build output stream")?;
+                }
+                mixer.mix(output);
+            },
+            |err| {
+                tracing::warn!(?err, "CPAL output stream error");
+                // TODO: Handle DeviceNotAvailable error (device disconencted during playback)
+            },
+        )?;
 
         tracing::debug!("Starting playback on output stream");
-        stream.play().context("Failed to play output stream")?;
+        stream.play()?;
 
         Ok(Self {
             _stream: stream,
