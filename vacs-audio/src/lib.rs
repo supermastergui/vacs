@@ -4,6 +4,8 @@ pub mod input;
 pub mod output;
 pub mod sources;
 pub(crate) mod mixer;
+pub mod stream;
+mod dsp;
 
 pub use device::Device;
 pub use device::DeviceType;

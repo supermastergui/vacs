@@ -11,8 +11,10 @@ cpal = { workspace = true }
 opus = { workspace = true }
 parking_lot = { workspace = true }
 ringbuf = { workspace = true }
+rubato = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

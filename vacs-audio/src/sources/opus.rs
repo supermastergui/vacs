@@ -49,10 +49,10 @@ impl OpusSource {
                             if written < n {
                                 overflows += 1;
                                 if overflows % 100 == 1 {
-                                    overflows = 0;
                                     tracing::debug!(
                                         ?written,
                                         needed = ?n,
+                                        ?overflows,
                                         "Opus ring overflow (tail samples dropped)"
                                     );
                                 }

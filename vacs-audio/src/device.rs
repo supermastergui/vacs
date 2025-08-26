@@ -4,6 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait};
 use cpal::{Sample, SampleFormat, SupportedStreamConfig, SupportedStreamConfigRange};
+use rubato::{SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::fmt::{Debug, Display, Formatter};
@@ -179,6 +180,35 @@ impl StreamDevice {
             )
             .map_err(Into::into)
     }
+
+    pub(crate) fn resampler(&self) -> Result<Option<SincFixedIn<f32>>> {
+        if self.sample_rate() == TARGET_SAMPLE_RATE {
+            Ok(None)
+        } else {
+            let resampler_params = SincInterpolationParameters {
+                sinc_len: 256,
+                f_cutoff: 0.95,
+                interpolation: SincInterpolationType::Cubic,
+                oversampling_factor: 256,
+                window: WindowFunction::BlackmanHarris2,
+            };
+
+            Ok(Some(
+                SincFixedIn::<f32>::new(
+                    TARGET_SAMPLE_RATE as f64 / self.sample_rate() as f64,
+                    2.0,
+                    resampler_params,
+                    if let cpal::BufferSize::Fixed(n) = self.config.buffer_size {
+                        n as usize
+                    } else {
+                        1024usize
+                    },
+                    1,
+                )
+                .context("Failed to create resampler")?,
+            ))
+        }
+    }
 }
 
 impl Debug for StreamDevice {
@@ -199,15 +229,15 @@ pub struct DeviceSelector {}
 impl DeviceSelector {
     #[instrument(level = "debug", err)]
     pub fn open(
+        device_type: DeviceType,
         preferred_host: Option<&str>,
         preferred_device_name: Option<&str>,
-        device_type: DeviceType,
     ) -> Result<(StreamDevice, bool)> {
         tracing::debug!("Opening device");
 
         let host = Self::select_host(preferred_host);
         let (device, stream_config, is_fallback) =
-            Self::pick_device_with_stream_config(&host, preferred_device_name, device_type)?;
+            Self::pick_device_with_stream_config(device_type, &host, preferred_device_name)?;
 
         tracing::debug!(?stream_config, device = ?DeviceDebug(&device), ?is_fallback, "Opened device");
         Ok((
@@ -248,7 +278,7 @@ impl DeviceSelector {
         tracing::debug!("Retrieving all devices names with at least one stream config");
 
         let host = Self::select_host(preferred_host);
-        let devices = Self::host_devices(&host, device_type)?;
+        let devices = Self::host_devices(device_type, &host)?;
 
         let device_names = devices
             .into_iter()
@@ -275,7 +305,7 @@ impl DeviceSelector {
         tracing::debug!("Retrieving device name for default device");
 
         let host = Self::select_host(preferred_host);
-        let (device, _) = Self::select_device(&host, None, device_type)?;
+        let (device, _) = Self::select_device(device_type, &host, None)?;
         Self::pick_best_stream_config(&device, device_type)?;
 
         tracing::debug!(device = ?DeviceDebug(&device), "Retrieved device name for default device");
@@ -311,19 +341,19 @@ impl DeviceSelector {
 
     #[instrument(level = "trace", err, skip(host), fields(host = ?HostDebug(host)))]
     fn pick_device_with_stream_config(
+        device_type: DeviceType,
         host: &cpal::Host,
         preferred_device_name: Option<&str>,
-        device_type: DeviceType,
     ) -> Result<(cpal::Device, SupportedStreamConfig, bool)> {
         let (mut device, mut is_fallback) =
-            Self::select_device(host, preferred_device_name, device_type)?;
+            Self::select_device(device_type, host, preferred_device_name)?;
 
         let (stream_config, _) = match Self::pick_best_stream_config(&device, device_type) {
             Ok(stream_config) => stream_config,
             Err(err) => {
                 tracing::warn!(?err, device = ?DeviceDebug(&device), "Failed to pick stream config for preferred device, picking best fallback device");
 
-                let devices = Self::host_devices(host, device_type)?;
+                let devices = Self::host_devices(device_type, host)?;
                 let mut best_fallback: Option<(
                     cpal::Device,
                     SupportedStreamConfig,
@@ -359,7 +389,7 @@ impl DeviceSelector {
     }
 
     #[instrument(level = "trace", err, skip(host), fields(host = ?HostDebug(host)))]
-    fn host_devices(host: &cpal::Host, device_type: DeviceType) -> Result<Vec<cpal::Device>> {
+    fn host_devices(device_type: DeviceType, host: &cpal::Host) -> Result<Vec<cpal::Device>> {
         match device_type {
             DeviceType::Input => Ok(host
                 .input_devices()
@@ -374,14 +404,14 @@ impl DeviceSelector {
 
     #[instrument(level = "trace", err, skip(host), fields(host = ?HostDebug(host)))]
     fn select_device(
+        device_type: DeviceType,
         host: &cpal::Host,
         preferred_device_name: Option<&str>,
-        device_type: DeviceType,
     ) -> Result<(cpal::Device, bool)> {
         tracing::trace!("Selecting device");
 
         if let Some(name) = preferred_device_name {
-            let devices = Self::host_devices(host, device_type)?;
+            let devices = Self::host_devices(device_type, host)?;
 
             if let Some(device) = devices.iter().find(|d| {
                 d.name()
