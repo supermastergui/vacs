@@ -4,12 +4,12 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use vacs_audio::output::AudioOutput;
 use vacs_audio::sources::opus::OpusSource;
 use vacs_audio::sources::waveform::{Waveform, WaveformSource, WaveformTone};
 use vacs_audio::sources::AudioSourceId;
 use vacs_audio::stream::capture::{CaptureStream, InputLevel};
-use vacs_audio::{Device, DeviceSelector, DeviceType, EncodedAudioFrame};
+use vacs_audio::{DeviceSelector, DeviceType, EncodedAudioFrame};
+use vacs_audio::stream::playback::PlaybackStream;
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum SourceType {
@@ -21,7 +21,7 @@ pub enum SourceType {
 }
 
 impl SourceType {
-    fn into_waveform_source(self, output_channels: usize, volume: f32) -> WaveformSource {
+    fn into_waveform_source(self, sample_rate: f32, output_channels: usize, volume: f32) -> WaveformSource {
         match self {
             SourceType::Opus => {
                 unimplemented!("Cannot create waveform source for Opus SourceType")
@@ -31,6 +31,7 @@ impl SourceType {
                 Duration::from_secs_f32(1.69),
                 None,
                 Duration::from_millis(10),
+                sample_rate,
                 output_channels,
                 volume,
             ),
@@ -39,6 +40,7 @@ impl SourceType {
                 Duration::from_secs(1),
                 Some(Duration::from_secs(4)),
                 Duration::from_millis(10),
+                sample_rate,
                 output_channels,
                 volume,
             ),
@@ -47,6 +49,7 @@ impl SourceType {
                 Duration::from_secs(1),
                 None,
                 Duration::from_millis(10),
+                sample_rate,
                 2,
                 volume,
             ),
@@ -55,6 +58,7 @@ impl SourceType {
                 Duration::from_millis(20),
                 None,
                 Duration::from_millis(1),
+                sample_rate,
                 output_channels,
                 volume,
             ),
@@ -63,14 +67,14 @@ impl SourceType {
 }
 
 pub struct AudioManager {
-    output: AudioOutput,
+    output: PlaybackStream,
     input: Option<CaptureStream>,
     source_ids: HashMap<SourceType, AudioSourceId>,
 }
 
 impl AudioManager {
     pub fn new(audio_config: &AudioConfig) -> Result<Self> {
-        let (output, source_ids) = Self::create_audio_output(audio_config)?;
+        let (output, source_ids) = Self::create_playback_stream(audio_config)?;
 
         Ok(Self {
             output,
@@ -80,7 +84,7 @@ impl AudioManager {
     }
 
     pub fn switch_output_device(&mut self, audio_config: &AudioConfig) -> Result<()> {
-        let (output, source_ids) = Self::create_audio_output(audio_config)?;
+        let (output, source_ids) = Self::create_playback_stream(audio_config)?;
         self.output = output;
         self.source_ids = source_ids;
         Ok(())
@@ -210,7 +214,8 @@ impl AudioManager {
             SourceType::Opus,
             self.output.add_audio_source(Box::new(OpusSource::new(
                 webrtc_rx,
-                self.output.output_channels(),
+                self.output.resampler()?,
+                self.output.channels(),
                 volume,
                 amp,
             )?)),
@@ -229,22 +234,29 @@ impl AudioManager {
         }
     }
 
-    fn create_audio_output(
+    fn create_playback_stream(
         audio_config: &AudioConfig,
-    ) -> Result<(AudioOutput, HashMap<SourceType, AudioSourceId>)> {
-        let output_device = Device::new(
-            &audio_config.device_config(DeviceType::Output),
+    ) -> Result<(PlaybackStream, HashMap<SourceType, AudioSourceId>)> {
+        // TODO: handle is_fallback?
+        let (output_device, _) = DeviceSelector::open(
             DeviceType::Output,
+            audio_config.host_name.as_deref(),
+            audio_config.output_device_name.as_deref(),
         )?;
+
+        let sample_rate = output_device.sample_rate() as f32;
+        let channels = output_device.channels() as usize;
+
         let mut output =
-            AudioOutput::start(&output_device).context("Failed to start audio output")?;
+            PlaybackStream::start(output_device).context("Failed to start audio output")?;
 
         let mut source_ids = HashMap::new();
         source_ids.insert(
             SourceType::Ring,
             output.add_audio_source(Box::new(SourceType::into_waveform_source(
                 SourceType::Ring,
-                output_device.stream_config.channels() as usize,
+                sample_rate,
+                channels,
                 audio_config.chime_volume,
             ))),
         );
@@ -252,7 +264,8 @@ impl AudioManager {
             SourceType::Ringback,
             output.add_audio_source(Box::new(SourceType::into_waveform_source(
                 SourceType::Ringback,
-                output_device.stream_config.channels() as usize,
+                sample_rate,
+                channels,
                 audio_config.output_device_volume,
             ))),
         );
@@ -260,7 +273,8 @@ impl AudioManager {
             SourceType::RingbackOneshot,
             output.add_audio_source(Box::new(SourceType::into_waveform_source(
                 SourceType::RingbackOneshot,
-                output_device.stream_config.channels() as usize,
+                sample_rate,
+                channels,
                 audio_config.output_device_volume,
             ))),
         );
@@ -268,7 +282,8 @@ impl AudioManager {
             SourceType::Click,
             output.add_audio_source(Box::new(SourceType::into_waveform_source(
                 SourceType::Click,
-                output_device.stream_config.channels() as usize,
+                sample_rate,
+                channels,
                 audio_config.click_volume,
             ))),
         );

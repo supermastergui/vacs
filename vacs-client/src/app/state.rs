@@ -6,7 +6,9 @@ pub(crate) mod webrtc;
 
 use crate::app::state::webrtc::Call;
 use crate::audio::manager::AudioManager;
-use crate::config::{AppConfig, Persistable, PersistedAudioConfig, APP_USER_AGENT, AUDIO_SETTINGS_FILE_NAME};
+use crate::config::{
+    AppConfig, Persistable, PersistedAudioConfig, APP_USER_AGENT, AUDIO_SETTINGS_FILE_NAME,
+};
 use crate::secrets::cookies::SecureCookieStore;
 use crate::signaling::Connection;
 use anyhow::Context;
@@ -41,7 +43,11 @@ impl AppStateInner {
 
         // TODO handle is_fallback and update config accordingly
 
-        match DeviceSelector::open(DeviceType::Output, config.audio.host_name.as_deref(), config.audio.output_device_name.as_deref()) {
+        match DeviceSelector::open(
+            DeviceType::Output,
+            config.audio.host_name.as_deref(),
+            config.audio.output_device_name.as_deref(),
+        ) {
             Ok(device) => {
                 log::info!("Using output device: {device:?}");
             }
@@ -50,7 +56,11 @@ impl AppStateInner {
             }
         }
 
-        match DeviceSelector::open(DeviceType::Input, config.audio.host_name.as_deref(), config.audio.input_device_name.as_deref()) {
+        match DeviceSelector::open(
+            DeviceType::Input,
+            config.audio.host_name.as_deref(),
+            config.audio.input_device_name.as_deref(),
+        ) {
             Ok(device) => {
                 log::info!("Using input device: {device:?}");
             }
@@ -60,24 +70,34 @@ impl AppStateInner {
         }
 
         // TODO remove/only log in case of init errors
-        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name.as_deref().unwrap_or(""), &DeviceType::Output) {
+        if let Err(err) = Device::list_devices_with_supported_configs(
+            config.audio.host_name.as_deref().unwrap_or_default(),
+            &DeviceType::Output,
+        ) {
             log::warn!("Failed to list all output devices with supported configs: {err:?}");
         }
-        if let Err(err) = Device::list_devices_with_supported_configs(&config.audio.host_name.as_deref().unwrap_or(""), &DeviceType::Input) {
+        if let Err(err) = Device::list_devices_with_supported_configs(
+            config.audio.host_name.as_deref().unwrap_or_default(),
+            &DeviceType::Input,
+        ) {
             log::warn!("Failed to list all input devices with supported configs: {err:?}");
         }
 
         let audio_manager = match AudioManager::new(&config.audio) {
             Ok(audio_manager) => audio_manager,
             Err(err) => {
-                log::warn!("Failed to initialize audio manager with read config, falling back to default output device. Error: {err:?}");
+                log::warn!(
+                    "Failed to initialize audio manager with read config, falling back to default output device. Error: {err:?}"
+                );
 
                 let mut audio_config = config.audio.clone();
                 audio_config.output_device_name = None;
 
                 let audio_manager = AudioManager::new(&audio_config)?;
 
-                log::info!("Audio manager initialized with fallback default output device. Persisting new audio config.");
+                log::info!(
+                    "Audio manager initialized with fallback default output device. Persisting new audio config."
+                );
                 let persisted_audio_config: PersistedAudioConfig = audio_config.into();
                 persisted_audio_config.persist(&config_dir, AUDIO_SETTINGS_FILE_NAME)?;
 

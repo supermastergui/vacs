@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
-use vacs_audio::config::AudioDeviceConfig;
-use vacs_audio::DeviceType;
 use vacs_webrtc::config::WebrtcConfig;
 
 /// User-Agent string used for all HTTP requests.
@@ -144,22 +142,6 @@ impl Default for AudioConfig {
             output_device_volume_amp: 2.0,
             click_volume: 0.5,
             chime_volume: 0.5,
-        }
-    }
-}
-
-impl AudioConfig {
-    pub fn device_config(&self, device_type: DeviceType) -> AudioDeviceConfig {
-        AudioDeviceConfig {
-            host_name: self.host_name.clone(),
-            device_name: match device_type {
-                DeviceType::Output => self.output_device_name.clone(),
-                DeviceType::Input => self.input_device_name.clone()
-            },
-            channels: match device_type {
-                DeviceType::Output => 2,
-                DeviceType::Input => 1,
-            },
         }
     }
 }
