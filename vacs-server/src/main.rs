@@ -1,11 +1,10 @@
-use anyhow::Context;
-use config::{Config, Environment, File};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::watch;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use vacs_server::auth::layer::setup_auth_layer;
+use vacs_server::build::BuildInfo;
 use vacs_server::config::AppConfig;
 use vacs_server::routes::create_app;
 use vacs_server::state::AppState;
@@ -27,7 +26,10 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let config = load_config()?;
+    let build_info = BuildInfo::gather();
+    tracing::info!(?build_info);
+
+    let config = AppConfig::parse()?;
 
     let redis_store = RedisStore::new(&config.redis).await?;
     let redis_pool = redis_store.get_pool().clone();
@@ -56,46 +58,6 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
-}
-
-fn load_config() -> anyhow::Result<AppConfig> {
-    Config::builder()
-        .set_default("server.bind_addr", "127.0.0.1:3000")?
-        .set_default("redis.addr", "redis://127.0.0.1:6379")?
-        .set_default("session.secure", true)?
-        .set_default("session.http_only", true)?
-        .set_default("session.expiry_secs", 604800)?
-        .set_default("auth.login_flow_timeout_millis", 10000)?
-        .set_default(
-            "auth.oauth.auth_url",
-            "https://auth-dev.vatsim.net/oauth/authorize",
-        )?
-        .set_default(
-            "auth.oauth.token_url",
-            "https://auth-dev.vatsim.net/oauth/token",
-        )?
-        .set_default("auth.oauth.redirect_url", "vacs://auth/vatsim/callback")?
-        .set_default(
-            "vatsim.user_service.user_details_endpoint_url",
-            "https://auth-dev.vatsim.net/api/user",
-        )?
-        .add_source(
-            File::with_name(
-                directories::ProjectDirs::from("app", "vacs", "vacs-server")
-                    .expect("Failed to get project dirs")
-                    .config_local_dir()
-                    .join("config.toml")
-                    .to_str()
-                    .expect("Failed to get local config path"),
-            )
-            .required(false),
-        )
-        .add_source(File::with_name("config.toml").required(false))
-        .add_source(Environment::with_prefix("vacs_server"))
-        .build()
-        .context("Failed to build config")?
-        .try_deserialize()
-        .context("Failed to deserialize config")
 }
 
 async fn shutdown_signal(shutdown_tx: watch::Sender<()>) {

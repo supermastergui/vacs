@@ -2,8 +2,8 @@ use crate::store::StoreBackend;
 use anyhow::Context;
 use bytes::Bytes;
 use dashmap::DashMap;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
 use tracing::instrument;
@@ -91,6 +91,10 @@ impl StoreBackend for MemoryStore {
         self.map.remove(key);
 
         tracing::trace!("Successfully removed value from memory store");
+        Ok(())
+    }
+
+    async fn is_healthy(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }

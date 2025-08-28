@@ -1,4 +1,7 @@
-use serde::Deserialize;
+use anyhow::Context;
+use config::{Config, Environment, File};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::time::Duration;
 
 pub const BROADCAST_CHANNEL_CAPACITY: usize = 100;
@@ -8,7 +11,7 @@ pub const CLIENT_WEBSOCKET_PING_INTERVAL: Duration = Duration::from_secs(10);
 pub const CLIENT_WEBSOCKET_PONG_TIMEOUT: Duration = Duration::from_secs(30);
 pub const SERVER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct AppConfig {
     pub server: ServerConfig,
     pub redis: RedisConfig,
@@ -17,7 +20,44 @@ pub struct AppConfig {
     pub vatsim: VatsimConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+impl AppConfig {
+    pub fn parse() -> anyhow::Result<Self> {
+        let config = Config::builder()
+            .add_source(Config::try_from(&AppConfig::default())?)
+            .add_source(
+                File::with_name(
+                    Path::new("/etc")
+                        .join(env!("CARGO_PKG_NAME").to_lowercase())
+                        .join("config.toml")
+                        .to_str()
+                        .context("Failed to build config file path")?,
+                )
+                .required(false),
+            )
+            .add_source(File::with_name("config.toml").required(false))
+            .add_source(
+                Environment::with_prefix("vacs")
+                    .separator("-")
+                    .try_parsing(true),
+            )
+            .build()
+            .context("Failed to build config")?
+            .try_deserialize::<Self>()
+            .context("Failed to deserialize config")?;
+
+        if config.auth.oauth.client_id.is_empty() {
+            anyhow::bail!("OAuth client ID is empty");
+        } else if config.auth.oauth.client_secret.is_empty() {
+            anyhow::bail!("OAuth client secret is empty");
+        } else if config.session.signing_key.is_empty() {
+            anyhow::bail!("Session signing key is empty");
+        }
+
+        Ok(config)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ServerConfig {
     pub bind_addr: String,
 }
@@ -25,12 +65,12 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "127.0.0.1:3000".to_string(),
+            bind_addr: "0.0.0.0:3000".to_string(),
         }
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RedisConfig {
     pub addr: String,
 }
@@ -43,7 +83,7 @@ impl Default for RedisConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SessionConfig {
     pub secure: bool,
     pub http_only: bool,
@@ -62,7 +102,7 @@ impl Default for SessionConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AuthConfig {
     pub login_flow_timeout_millis: u64,
     pub oauth: OAuthConfig,
@@ -77,7 +117,7 @@ impl Default for AuthConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OAuthConfig {
     pub auth_url: String,
     pub token_url: String,
@@ -98,12 +138,12 @@ impl Default for OAuthConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct VatsimConfig {
     pub user_service: VatsimUserServiceConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VatsimUserServiceConfig {
     pub user_details_endpoint_url: String,
 }

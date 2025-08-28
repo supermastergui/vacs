@@ -3,8 +3,8 @@ pub mod redis;
 
 use crate::store::memory::MemoryStore;
 use crate::store::redis::RedisStore;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::time::Duration;
 
 #[async_trait::async_trait]
@@ -17,6 +17,7 @@ pub trait StoreBackend {
         expiry: Option<Duration>,
     ) -> anyhow::Result<()>;
     async fn remove(&self, key: &str) -> anyhow::Result<()>;
+    async fn is_healthy(&self) -> anyhow::Result<()>;
 }
 
 pub enum Store {
@@ -49,6 +50,13 @@ impl StoreBackend for Store {
         match self {
             Store::Redis(store) => store.remove(key).await,
             Store::Memory(store) => store.remove(key).await,
+        }
+    }
+
+    async fn is_healthy(&self) -> anyhow::Result<()> {
+        match self {
+            Store::Redis(store) => store.is_healthy().await,
+            Store::Memory(store) => store.is_healthy().await,
         }
     }
 }

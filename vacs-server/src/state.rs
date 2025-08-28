@@ -5,7 +5,7 @@ use crate::ws::ClientSession;
 use anyhow::Context;
 use std::collections::HashMap;
 use std::time::Duration;
-use tokio::sync::{RwLock, broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch, RwLock};
 use tracing::instrument;
 use uuid::Uuid;
 use vacs_protocol::ws::{ClientInfo, ErrorReason, SignalingMessage};
@@ -206,5 +206,9 @@ impl AppState {
             Ok(None) => anyhow::bail!("Web socket auth token not found"),
             Err(err) => anyhow::bail!(err),
         }
+    }
+
+    pub async fn health_check(&self) -> anyhow::Result<()> {
+        self.store.is_healthy().await
     }
 }

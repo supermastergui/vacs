@@ -1,5 +1,5 @@
 mod auth;
-mod health;
+mod root;
 mod ws;
 
 use crate::state::AppState;
@@ -19,7 +19,7 @@ where
     Router::new()
         .nest("/auth", auth::routes())
         .nest("/ws", ws::routes().merge(crate::ws::routes()))
-        .nest("/health", health::routes())
+        .merge(root::routes())
         .layer(TraceLayer::new_for_http().make_span_with(DefaultMakeSpan::default()))
         .layer(TimeoutLayer::new(crate::config::SERVER_SHUTDOWN_TIMEOUT))
         .layer(auth_layer)

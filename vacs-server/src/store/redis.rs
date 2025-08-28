@@ -2,13 +2,14 @@ use crate::config::RedisConfig;
 use crate::store::StoreBackend;
 use anyhow::Context;
 use bytes::Bytes;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt::Debug;
 use std::time::Duration;
 use tower_sessions_redis_store::fred::interfaces::ClientLike;
 use tower_sessions_redis_store::fred::prelude::Expiration::EX;
 use tower_sessions_redis_store::fred::prelude::{Config, KeysInterface, Pool};
+use tower_sessions_redis_store::fred::types::Builder;
 use tracing::instrument;
 
 #[derive(Debug)]
@@ -22,8 +23,12 @@ impl RedisStore {
         tracing::trace!("Creating Redis pool");
         let pool_config = Config::from_url_centralized(&redis_config.addr)
             .context("Failed to create redis pool config")?;
-        let pool =
-            Pool::new(pool_config, None, None, None, 6).context("Failed to create redis pool")?;
+        let pool = Builder::from_config(pool_config)
+            .with_performance_config(|config| {
+                config.default_command_timeout = Duration::from_secs(2)
+            })
+            .build_pool(5)
+            .context("Failed to create redis pool")?;
 
         tracing::trace!("Connecting to Redis");
         pool.connect();
@@ -103,5 +108,9 @@ impl StoreBackend for RedisStore {
 
         tracing::trace!(?removed, "Successfully removed value from redis store");
         Ok(())
+    }
+
+    async fn is_healthy(&self) -> anyhow::Result<()> {
+        self.pool.ping(None).await.context("Failed to ping redis")
     }
 }
