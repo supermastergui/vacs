@@ -49,12 +49,17 @@ pub async fn audio_set_host(
         ))));
     }
 
-    // TODO actually switch audio host
-
     log::info!("Setting audio host (name: {host_name})");
 
     let persisted_audio_config: PersistedAudioConfig = {
-        state.config.audio.host_name = Some(host_name).filter(|x| !x.is_empty());
+        let mut audio_config = state.config.audio.clone();
+        audio_config.host_name = Some(host_name).filter(|x| !x.is_empty());
+
+        state
+            .audio_manager()
+            .switch_output_device(app.clone(), &audio_config, false)?;
+
+        state.config.audio = audio_config;
         state.config.audio.clone().into()
     };
 

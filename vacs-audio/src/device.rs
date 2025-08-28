@@ -337,8 +337,6 @@ impl DeviceSelector {
     #[instrument(level = "trace")]
     fn select_host(preferred_host: Option<&str>) -> cpal::Host {
         tracing::trace!("Selecting host");
-        
-        // TODO: Host fallback?
 
         let hosts = cpal::available_hosts();
 
