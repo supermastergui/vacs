@@ -1,4 +1,4 @@
-import {useEffect, useState} from "preact/hooks";
+import {useRef, useState} from "preact/hooks";
 import {listen, UnlistenFn} from "@tauri-apps/api/event";
 import {InputLevel} from "../../types/audio.ts";
 import {clsx} from "clsx";
@@ -9,11 +9,16 @@ function InputLevelMeter() {
     const isCallActive = useCallStore(state => state.callDisplay?.type === "accepted");
     const [unlistenFn, setUnlistenFn] = useState<Promise<UnlistenFn> | undefined>();
     const [level, setLevel] = useState<InputLevel | undefined>();
+    const unlistenStopFn = useRef<Promise<UnlistenFn> | undefined>();
 
     const handleOnClick = async () => {
         if (isCallActive) return; // Cannot start input level meter while call is active
 
         void invokeSafe("audio_play_ui_click");
+
+        if (unlistenStopFn.current) {
+            (await unlistenStopFn.current)();
+        }
 
         if (unlistenFn !== undefined) {
             await invokeSafe("audio_stop_input_level_meter");
@@ -26,27 +31,17 @@ function InputLevelMeter() {
                 setLevel(event.payload);
             })
 
+            const unlistenStop = listen("audio:stop-input-level-meter", async () => {
+                (await unlisten)();
+                setUnlistenFn(undefined);
+                setLevel(undefined);
+            });
+
             setUnlistenFn(unlisten);
+            unlistenStopFn.current = unlistenStop;
             void invokeSafe("audio_start_input_level_meter");
         }
     };
-
-    useEffect(() => {
-        const stopLevelMeter = async () => {
-            console.log("Stopping level meter", unlistenFn);
-            if (unlistenFn !== undefined) {
-                (await unlistenFn)();
-                setUnlistenFn(undefined);
-                setLevel(undefined);
-            }
-        };
-
-        const unlisten = listen("audio:stop-input-level-meter", stopLevelMeter);
-
-        return () => {
-            unlisten.then(f => f());
-        }
-    }, []);
 
 
     return (
