@@ -26,6 +26,18 @@ pub enum ErrorReason {
     UnexpectedMessage(String),
 }
 
+/// Possible reasons for a call error.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum CallErrorReason {
+    /// The client fails to transmit or receive the call audio
+    AudioFailure,
+    /// The client has another active call
+    CallActive,
+    /// The client received a [`SignalingMessage::CallAccept`] from a peer without previously sending a [`SignalingMessage::CallInvite`] message.
+    NotInvited,
+    Other(String)
+}
+
 /// Represents a client as observed by the signaling server.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -126,11 +138,22 @@ pub enum SignalingMessage {
         /// When received from the signaling server (by the caller), this is the ID of the target client accepting the call.
         peer_id: String,
     },
-    /// A call end message sent by either client to indicate the (gracious) end of a call.
+    /// A call end message sent by either client to indicate the gracious end of a call.
     ///
     /// The signaling server will forward the message to the given peer, exchanging the [`SignalingMessage::CallEnd::peer_id`] with the other peer's ID.
     #[serde(rename_all = "camelCase")]
     CallEnd { peer_id: String },
+    /// A call error message sent by either client to indicate an error during an active call or while trying to establish a call.
+    ///
+    /// The signaling server will forward the message to the given peer, exchanging the [`SignalingMessage::CallError::peer_id`] with the other peer's ID.
+    #[serde(rename_all = "camelCase")]
+    CallError {
+        /// When sent to the signaling server by the caller, this is the ID of the target client.
+        /// When received from the signaling server (by the callee), this is the ID of the source client sending the error.
+        peer_id: String,
+        /// Reason for the error.
+        reason: CallErrorReason
+    },
     /// A call ICE candidate message sent by either client to trickle ICE candidates to the other peer during call setup.
     ///
     /// The signaling server will forward the candidate to the given peer, exchanging the [`SignalingMessage::CallIceCandidate::peer_id`] with the other peer's ID.

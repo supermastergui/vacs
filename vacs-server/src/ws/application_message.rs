@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 use axum::extract::ws;
 use tokio::sync::mpsc;
-use vacs_protocol::ws::SignalingMessage;
+use vacs_protocol::ws::{CallErrorReason, SignalingMessage};
 
 pub async fn handle_application_message(
     state: &Arc<AppState>,
@@ -50,12 +50,16 @@ pub async fn handle_application_message(
             handle_call_answer(state, client, &peer_id, &sdp).await;
             ControlFlow::Continue(())
         }
-        SignalingMessage::CallIceCandidate { peer_id, candidate } => {
-            handle_call_ice_candidate(state, client, &peer_id, &candidate).await;
-            ControlFlow::Continue(())
-        }
         SignalingMessage::CallEnd { peer_id } => {
             handle_call_end(state, client, &peer_id).await;
+            ControlFlow::Continue(())
+        }
+        SignalingMessage::CallError { peer_id, reason } => {
+            handle_call_error(state, client, &peer_id, reason).await;
+            ControlFlow::Continue(())
+        }
+        SignalingMessage::CallIceCandidate { peer_id, candidate } => {
+            handle_call_ice_candidate(state, client, &peer_id, &candidate).await;
             ControlFlow::Continue(())
         }
         _ => ControlFlow::Continue(()),
@@ -129,6 +133,33 @@ async fn handle_call_answer(state: &AppState, client: &ClientSession, peer_id: &
         .await;
 }
 
+async fn handle_call_end(state: &AppState, client: &ClientSession, peer_id: &str) {
+    tracing::trace!(?peer_id, "Handling call end");
+    state
+        .send_message_to_peer(
+            client,
+            peer_id,
+            SignalingMessage::CallEnd {
+                peer_id: client.get_id().to_string(),
+            },
+        )
+        .await;
+}
+
+async fn handle_call_error(state: &AppState, client: &ClientSession, peer_id: &str, reason: CallErrorReason) {
+    tracing::trace!(?peer_id, "Handling call error");
+    state
+        .send_message_to_peer(
+            client,
+            peer_id,
+            SignalingMessage::CallError {
+                peer_id: client.get_id().to_string(),
+                reason,
+            }
+        )
+        .await;
+}
+
 async fn handle_call_ice_candidate(
     state: &AppState,
     client: &ClientSession,
@@ -143,19 +174,6 @@ async fn handle_call_ice_candidate(
             SignalingMessage::CallIceCandidate {
                 peer_id: client.get_id().to_string(),
                 candidate: candidate.to_string(),
-            },
-        )
-        .await;
-}
-
-async fn handle_call_end(state: &AppState, client: &ClientSession, peer_id: &str) {
-    tracing::trace!(?peer_id, "Handling call end");
-    state
-        .send_message_to_peer(
-            client,
-            peer_id,
-            SignalingMessage::CallEnd {
-                peer_id: client.get_id().to_string(),
             },
         )
         .await;
