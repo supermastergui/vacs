@@ -20,6 +20,7 @@ export function setupSignalingListeners() {
             listen("signaling:disconnected", () => {
                 setConnected(false);
                 setDisplayName("");
+                setClients([]);
                 resetCallStore();
             }),
             listen<ClientInfo[]>("signaling:client-list", (event) => {

@@ -323,10 +323,7 @@ impl Connection {
                 let mut state = state.lock().await;
 
                 // Stop any active webrtc call
-                if !state.end_call(&peer_id).await {
-                    log::warn!("Received peer not found message for peer that is not active");
-                    return;
-                }
+                state.end_call(&peer_id).await;
 
                 // Remove from outgoing and incoming states
                 state.remove_outgoing_call_peer_id(&peer_id);
@@ -347,6 +344,8 @@ impl Connection {
 
                 // Stop any active webrtc call
                 state.end_call(&id).await;
+
+                // Remove from outgoing and incoming states
                 state.remove_outgoing_call_peer_id(&id);
                 state.remove_incoming_call_peer_id(&id);
 
