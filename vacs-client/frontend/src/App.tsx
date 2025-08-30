@@ -15,7 +15,7 @@ import SettingsPage from "./pages/SettingsPage.tsx";
 import telephone from "./assets/telephone.svg";
 import ErrorOverlay from "./components/ErrorOverlay.tsx";
 import {invokeSafe} from "./error.ts";
-import {setupErrorListener} from "./listeners/error-listener.ts";
+import {setupErrorListeners} from "./listeners/error-listener.ts";
 import MissionPage from "./pages/MissionPage.tsx";
 import TelephonePage from "./pages/TelephonePage.tsx";
 import LinkButton from "./components/ui/LinkButton.tsx";
@@ -33,13 +33,18 @@ function App() {
     useEffect(() => {
         void invoke("app_frontend_ready");
 
-        // TODO handle returned cleanup functions
-        setupErrorListener();
-        setupAuthListeners();
-        setupSignalingListeners();
-        setupWebrtcListeners();
+        const cleanups: (() => void)[] = [];
+
+        cleanups.push(setupErrorListeners());
+        cleanups.push(setupAuthListeners());
+        cleanups.push(setupSignalingListeners());
+        cleanups.push(setupWebrtcListeners());
 
         void invokeSafe("auth_check_session");
+
+        return () => {
+            cleanups.forEach((cleanup) => cleanup());
+        }
     }, []);
 
     return (
