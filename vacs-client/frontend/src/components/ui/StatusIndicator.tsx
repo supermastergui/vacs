@@ -15,7 +15,7 @@ function StatusIndicator() {
     const status = connected ? "green" : "gray";
 
     return (
-        <div className={clsx("h-full aspect-square rounded-full border", StatusColors[status])}></div>
+        <div className={clsx("h-3 w-3 rounded-full border", StatusColors[status])}></div>
     );
 }
 
