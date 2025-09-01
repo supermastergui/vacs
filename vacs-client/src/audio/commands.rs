@@ -45,9 +45,9 @@ pub async fn audio_set_host(
     let mut state = app_state.lock().await;
 
     if state.active_call_peer_id().is_some() {
-        return Err(Error::AudioDevice(Box::new(AudioError::Other(
+        return Err(AudioError::Other(
             anyhow::anyhow!("Cannot set audio host while call is active"),
-        ))));
+        ).into());
     }
 
     log::info!("Setting audio host (name: {host_name})");
@@ -132,9 +132,9 @@ pub async fn audio_set_device(
     let mut state = app_state.lock().await;
 
     if state.audio_manager().is_input_device_attached() {
-        return Err(Error::AudioDevice(Box::new(AudioError::Other(
+        return Err(AudioError::Other(
             anyhow::anyhow!("Cannot set audio device while call is active"),
-        ))));
+        ).into());
     }
 
     log::info!(
@@ -273,9 +273,9 @@ pub async fn audio_start_input_level_meter(
     let audio_config = &state.config.audio.clone();
 
     if state.audio_manager().is_input_device_attached() {
-        return Err(Error::AudioDevice(Box::new(AudioError::Other(
+        return Err(AudioError::Other(
             anyhow::anyhow!("Cannot start input level meter while call is active"),
-        ))));
+        ).into());
     }
 
     state.audio_manager().attach_input_level_meter(

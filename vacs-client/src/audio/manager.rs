@@ -280,9 +280,9 @@ impl AudioManager {
     ) -> Result<(), Error> {
         if self.source_ids.contains_key(&SourceType::Opus) {
             log::warn!("Tried to attach call but a call was already attached");
-            return Err(Error::AudioDevice(Box::new(AudioError::Other(
+            return Err(AudioError::Other(
                 anyhow::anyhow!("Tried to attach call but a call was already attached"),
-            ))));
+            ).into());
         }
 
         self.source_ids.insert(

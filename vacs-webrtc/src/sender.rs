@@ -14,11 +14,11 @@ pub struct Sender {
 }
 
 impl Sender {
-    #[instrument(level = "trace", skip_all, err)]
+    #[instrument(level = "trace", skip_all)]
     pub async fn new(
         track: Arc<TrackLocalStaticSample>,
         mut input_rx: mpsc::Receiver<EncodedAudioFrame>,
-    ) -> Result<Self> {
+    ) -> Self {
         let (shutdown_tx, mut shutdown_rx) = watch::channel(());
 
         let task = tokio::runtime::Handle::current().spawn(async move {
@@ -51,7 +51,7 @@ impl Sender {
             }
         }.instrument(tracing::Span::current()));
 
-        Ok(Self { shutdown_tx, task })
+        Self { shutdown_tx, task }
     }
 
     pub fn shutdown(&self) {

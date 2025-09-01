@@ -6,7 +6,7 @@ function CallQueue() {
     const blink = useCallStore(state => state.blink);
     const callDisplay = useCallStore(state => state.callDisplay);
     const incomingCalls = useCallStore(state => state.incomingCalls);
-    const {acceptCall, endCall, dismissRejectedPeer, dismissErrorPeer} = useCallStore(state => state.actions);
+    const {acceptCall, endCall, dismissRejectedPeer, dismissErrorPeer, removePeer} = useCallStore(state => state.actions);
 
     const handleCallDisplayClick = async (peerId: string) => {
         if (callDisplay?.type === "accepted" || callDisplay?.type === "outgoing") {
@@ -26,9 +26,11 @@ function CallQueue() {
         if (callDisplay !== undefined) return;
 
         try {
-            await invokeStrict("signaling_accept_call", {peerId: peerId});
             acceptCall(peerId);
-        } catch {}
+            await invokeStrict("signaling_accept_call", {peerId: peerId});
+        } catch {
+            removePeer(peerId);
+        }
     }
 
     const cdColor = callDisplay?.type === "accepted" ? "green" : callDisplay?.type === "rejected" && blink ? "green" : callDisplay?.type === "error" && blink ? "red" : "gray";

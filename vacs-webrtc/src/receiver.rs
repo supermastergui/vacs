@@ -1,4 +1,3 @@
-use anyhow::Result;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tracing::instrument;
@@ -10,11 +9,11 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    #[instrument(level = "trace", skip_all, err)]
+    #[instrument(level = "trace", skip_all)]
     pub async fn new(
         peer_connection: &RTCPeerConnection,
         output_tx: mpsc::Sender<EncodedAudioFrame>,
-    ) -> Result<Self> {
+    ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
 
         peer_connection.on_track(Box::new(move |track, _, _| {
@@ -48,7 +47,7 @@ impl Receiver {
             })
         }));
 
-        Ok(Self { shutdown_tx })
+        Self { shutdown_tx }
     }
 
     pub fn shutdown(&self) {

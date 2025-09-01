@@ -32,9 +32,10 @@ function DAKey({client}: DAKeyProps) {
             if (callDisplay !== undefined) return;
 
             try {
-                await invokeStrict("signaling_accept_call", {peerId: client.id});
                 acceptCall(client.id);
+                await invokeStrict("signaling_accept_call", {peerId: client.id});
             } catch {
+                removePeer(client.id);
             }
         } else if (beingCalled || inCall) {
             try {

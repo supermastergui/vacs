@@ -1,7 +1,9 @@
+use std::fmt::{Display, Formatter};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
+use vacs_protocol::ws::CallErrorReason;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -16,7 +18,7 @@ pub enum Error {
     #[error("HTTP error: {0}")]
     Reqwest(#[from] Box<reqwest::Error>),
     #[error("WebRTC error: {0}")]
-    Webrtc(String),
+    Webrtc(#[from] Box<vacs_webrtc::error::WebrtcError>),
     #[error(transparent)]
     Other(#[from] Box<anyhow::Error>),
 }
@@ -30,6 +32,12 @@ impl From<vacs_audio::error::AudioError> for Error {
 impl From<vacs_signaling::error::SignalingError> for Error {
     fn from(err: vacs_signaling::error::SignalingError) -> Self {
         Error::Signaling(Box::new(err))
+    }
+}
+
+impl From<vacs_webrtc::error::WebrtcError> for Error {
+    fn from(err: vacs_webrtc::error::WebrtcError) -> Self {
+        Error::Webrtc(Box::new(err))
     }
 }
 
@@ -138,8 +146,22 @@ impl From<&Error> for FrontendError {
             Error::Reqwest(err) => FrontendError::new("HTTP error", err.to_string()),
             Error::Network(err) => FrontendError::new("Network error", err),
             Error::Signaling(err) => FrontendError::new("Signaling error", err.to_string()),
-            Error::Webrtc(err) => FrontendError::new("WebRTC error", err),
+            Error::Webrtc(err) => FrontendError::new("WebRTC error", err.to_string()),
             Error::Other(err) => FrontendError::new("Error", err.to_string()),
+        }
+    }
+}
+
+impl From<Error> for CallErrorReason {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::AudioDevice(_) => CallErrorReason::AudioFailure,
+            Error::Webrtc(err) => match err.as_ref() {
+                vacs_webrtc::error::WebrtcError::CallActive => CallErrorReason::CallActive,
+                vacs_webrtc::error::WebrtcError::NoCallActive => CallErrorReason::NotInvited,
+                _ => CallErrorReason::WebrtcFailure
+            },
+            _ => CallErrorReason::Other
         }
     }
 }

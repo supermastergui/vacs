@@ -203,9 +203,9 @@ impl Connection {
                         }
                         Err(err) => {
                             log::warn!("Failed to start call: {err:?}");
-                            // TODO: send proper call error reason => add PeerError
+                            app.emit("webrtc:call-error", &peer_id).ok();
                             state
-                                .send_signaling_message(SignalingMessage::CallError { peer_id, reason: CallErrorReason::CallActive })
+                                .send_signaling_message(SignalingMessage::CallError { peer_id, reason: err.into() })
                                 .await
                         }
                     }
@@ -238,9 +238,8 @@ impl Connection {
                     Err(err) => {
                         log::warn!("Failed to accept call offer: {err:?}");
                         app.emit("webrtc:call-error", &peer_id).ok();
-                        // TODO: send proper call error reason => add PeerError
                         state
-                            .send_signaling_message(SignalingMessage::CallError { peer_id, reason: CallErrorReason::CallActive })
+                            .send_signaling_message(SignalingMessage::CallError { peer_id, reason: err.into() })
                             .await
                     }
                 };
@@ -257,9 +256,8 @@ impl Connection {
 
                 if let Err(err) = state.accept_call_answer(&peer_id, sdp).await {
                     log::warn!("Failed to accept answer: {err:?}");
-                    // TODO: send proper call error reason => add PeerError
                     if let Err(err) = state
-                        .send_signaling_message(SignalingMessage::CallError { peer_id, reason: CallErrorReason::CallActive })
+                        .send_signaling_message(SignalingMessage::CallError { peer_id, reason: err.into() })
                         .await
                     {
                         log::warn!("Failed to send call end message: {err:?}");

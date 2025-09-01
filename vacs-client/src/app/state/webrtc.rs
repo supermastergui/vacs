@@ -1,6 +1,6 @@
 use crate::app::state::audio::AppStateAudioExt;
 use crate::app::state::signaling::AppStateSignalingExt;
-use crate::app::state::{sealed, AppState, AppStateInner};
+use crate::app::state::{AppState, AppStateInner, sealed};
 use crate::config::ENCODED_AUDIO_FRAME_BUFFER_SIZE;
 use crate::error::Error;
 use anyhow::Context;
@@ -8,9 +8,9 @@ use std::fmt::{Debug, Formatter};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
-use vacs_audio::EncodedAudioFrame;
 use vacs_protocol::ws::SignalingMessage;
 use vacs_webrtc::{Peer, PeerConnectionState, PeerEvent};
+use vacs_webrtc::error::WebrtcError;
 
 pub struct Call {
     pub(super) peer_id: String,
@@ -32,11 +32,14 @@ pub trait AppStateWebrtcExt: sealed::Sealed {
         peer_id: String,
         offer_sdp: Option<String>,
     ) -> Result<String, Error>;
-    async fn accept_call_answer(&self, peer_id: &str, answer_sdp: String) -> Result<(), Error>;
+    async fn accept_call_answer(
+        &self,
+        peer_id: &str,
+        answer_sdp: String,
+    ) -> Result<(), Error>;
     async fn set_remote_ice_candidate(&self, peer_id: &str, candidate: String);
     async fn end_call(&mut self, peer_id: &str) -> bool;
     fn active_call_peer_id(&self) -> Option<&String>;
-    fn is_active_call(&self, peer_id: &str) -> bool;
 }
 
 impl AppStateWebrtcExt for AppStateInner {
@@ -46,9 +49,8 @@ impl AppStateWebrtcExt for AppStateInner {
         peer_id: String,
         offer_sdp: Option<String>,
     ) -> Result<String, Error> {
-        // TODO return custom error distinguish between active call or peer error
         if self.active_call.is_some() {
-            return Err(anyhow::anyhow!("Another call is already active").into());
+            return Err(WebrtcError::CallActive.into());
         }
 
         let (peer, mut events_rx) = Peer::new(self.config.webrtc.clone())
@@ -77,7 +79,22 @@ impl AppStateWebrtcExt for AppStateInner {
 
                                 let app_state = app.state::<AppState>();
                                 let mut state = app_state.lock().await;
-                                state.on_peer_connected(&app, &peer_id_clone).await;
+                                if let Err(err) =
+                                    state.on_peer_connected(&app, &peer_id_clone).await
+                                {
+                                    state.end_call(&peer_id_clone).await;
+                                    if let Err(err) = state
+                                        .send_signaling_message(SignalingMessage::CallError {
+                                            peer_id: peer_id_clone.clone(),
+                                            reason: err.into(),
+                                        })
+                                        .await
+                                    {
+                                        log::warn!("Failed to send call message: {err:?}");
+                                    }
+                                    // TODO display short error message in info grid
+                                    app.emit("webrtc:call-error", &peer_id_clone).ok();
+                                }
                             }
                             PeerConnectionState::Disconnected => {
                                 log::info!("Disconnected from peer");
@@ -153,21 +170,21 @@ impl AppStateWebrtcExt for AppStateInner {
         Ok(sdp)
     }
 
-    async fn accept_call_answer(&self, peer_id: &str, answer_sdp: String) -> Result<(), Error> {
+    async fn accept_call_answer(
+        &self,
+        peer_id: &str,
+        answer_sdp: String,
+    ) -> Result<(), Error> {
         if let Some(call) = &self.active_call {
             if call.peer_id == peer_id {
                 call.peer.accept_answer(answer_sdp).await?;
-                Ok(())
+                return Ok(());
             } else {
-                Err(Error::Webrtc(
-                    "Tried to accept answer, but peer_id does not match".to_string(),
-                ))
+                log::warn!("Tried to accept answer, but peer_id does not match. Peer id: {peer_id}");
             }
-        } else {
-            Err(Error::Webrtc(
-                "Tried to accept answer, but there is no active call".to_string(),
-            ))
         }
+
+        Err(WebrtcError::NoCallActive.into())
     }
 
     async fn set_remote_ice_candidate(&self, peer_id: &str, candidate: String) {
@@ -178,7 +195,7 @@ impl AppStateWebrtcExt for AppStateInner {
         } else if let Some(call) = self.held_calls.get(peer_id) {
             call.peer.add_remote_ice_candidate(candidate).await
         } else {
-            Err(anyhow::anyhow!("Unknown peer {peer_id}"))
+            Err(anyhow::anyhow!("Unknown peer {peer_id}").into())
         };
 
         if let Err(err) = res {
@@ -202,7 +219,7 @@ impl AppStateWebrtcExt for AppStateInner {
         } else if let Some(mut call) = self.held_calls.remove(peer_id) {
             call.peer.close().await
         } else {
-            Err(anyhow::anyhow!("Unknown peer {peer_id}"))
+            Err(anyhow::anyhow!("Unknown peer {peer_id}").into())
         };
 
         if let Err(err) = &res {
@@ -216,42 +233,20 @@ impl AppStateWebrtcExt for AppStateInner {
     fn active_call_peer_id(&self) -> Option<&String> {
         self.active_call.as_ref().map(|call| &call.peer_id)
     }
-
-    fn is_active_call(&self, peer_id: &str) -> bool {
-        self.active_call
-            .as_ref()
-            .map(|call| call.peer_id == peer_id)
-            .unwrap_or(false)
-    }
 }
 
 impl AppStateInner {
-    async fn start_active_call(
-        &mut self,
-        input_rx: mpsc::Receiver<EncodedAudioFrame>,
-        output_tx: mpsc::Sender<EncodedAudioFrame>,
-    ) -> Result<(), Error> {
-        if let Some(call) = &mut self.active_call {
-            call.peer
-                .start(input_rx, output_tx)
-                .await
-                .map_err(|err| err.into())
-        } else {
-            log::warn!("Tried to start peer without an active call");
-            Ok(())
-        }
-    }
-
-    async fn on_peer_connected(&mut self, app: &AppHandle, peer_id: &str) {
-        if self.is_active_call(peer_id) {
+    async fn on_peer_connected(&mut self, app: &AppHandle, peer_id: &str) -> Result<(), Error> {
+        if let Some(call) = &mut self.active_call
+            && call.peer_id == peer_id
+        {
             let (output_tx, output_rx) = mpsc::channel(ENCODED_AUDIO_FRAME_BUFFER_SIZE);
             let (input_tx, input_rx) = mpsc::channel(ENCODED_AUDIO_FRAME_BUFFER_SIZE);
 
             log::debug!("Starting peer {peer_id} in WebRTC manager");
-            if let Err(err) = self.start_active_call(input_rx, output_tx).await {
+            if let Err(err) = call.peer.start(input_rx, output_tx).await {
                 log::warn!("Failed to start peer in WebRTC manager: {err:?}");
-                self.end_call(peer_id).await;
-                return;
+                return Err(err.into());
             }
 
             let audio_config = self.config.audio.clone();
@@ -262,9 +257,7 @@ impl AppStateInner {
                 audio_config.output_device_volume_amp,
             ) {
                 log::warn!("Failed to attach call to audio manager: {err:?}");
-                self.end_call(peer_id).await;
-                app.emit("signaling:call-end", &peer_id).ok();
-                return;
+                return Err(err);
             }
 
             log::debug!("Attaching input device to audio manager");
@@ -273,9 +266,7 @@ impl AppStateInner {
                     .attach_input_device(app.clone(), &audio_config, input_tx)
             {
                 log::warn!("Failed to attach input device to audio manager: {err:?}");
-                self.end_call(peer_id).await;
-                app.emit("signaling:call-end", &peer_id).ok();
-                return;
+                return Err(err);
             }
 
             log::info!("Successfully established call to peer");
@@ -289,5 +280,6 @@ impl AppStateInner {
                 log::debug!("Peer {peer_id} is not held, ignoring");
             }
         }
+        Ok(())
     }
 }

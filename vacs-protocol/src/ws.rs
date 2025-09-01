@@ -29,13 +29,16 @@ pub enum ErrorReason {
 /// Possible reasons for a call error.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub enum CallErrorReason {
-    /// The client fails to transmit or receive the call audio
+    /// An error with the WebRTC connection of the client occurred.
+    WebrtcFailure,
+    /// The client failed to transmit or receive the call audio.
     AudioFailure,
-    /// The client has another active call
+    /// The client has another active call.
     CallActive,
     /// The client received a [`SignalingMessage::CallAccept`] from a peer without previously sending a [`SignalingMessage::CallInvite`] message.
     NotInvited,
-    Other(String)
+    /// An unspecified error occurred.
+    Other
 }
 
 /// Represents a client as observed by the signaling server.

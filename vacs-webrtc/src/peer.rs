@@ -1,24 +1,25 @@
 use crate::config::{
-    WebrtcConfig, PEER_EVENTS_CAPACITY, WEBRTC_CHANNELS, WEBRTC_TRACK_ID, WEBRTC_TRACK_STREAM_ID,
+    PEER_EVENTS_CAPACITY, WEBRTC_CHANNELS, WEBRTC_TRACK_ID, WEBRTC_TRACK_STREAM_ID, WebrtcConfig,
 };
-use anyhow::{Context, Result};
+use crate::error::WebrtcError;
+use anyhow::Context;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tracing::instrument;
 use vacs_audio::{EncodedAudioFrame, TARGET_SAMPLE_RATE};
-use webrtc::api::interceptor_registry::register_default_interceptors;
-use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_OPUS};
 use webrtc::api::APIBuilder;
+use webrtc::api::interceptor_registry::register_default_interceptors;
+use webrtc::api::media_engine::{MIME_TYPE_OPUS, MediaEngine};
 use webrtc::ice_transport::ice_candidate::{RTCIceCandidate, RTCIceCandidateInit};
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
+use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
-use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
+use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
 pub type PeerConnectionState = RTCPeerConnectionState;
 
@@ -39,7 +40,9 @@ pub struct Peer {
 
 impl Peer {
     #[instrument(level = "debug", err)]
-    pub async fn new(config: WebrtcConfig) -> Result<(Self, broadcast::Receiver<PeerEvent>)> {
+    pub async fn new(
+        config: WebrtcConfig,
+    ) -> Result<(Self, broadcast::Receiver<PeerEvent>), WebrtcError> {
         let mut media_engine = MediaEngine::default();
         media_engine
             .register_default_codecs()
@@ -140,30 +143,22 @@ impl Peer {
         &mut self,
         input_rx: mpsc::Receiver<EncodedAudioFrame>,
         output_tx: mpsc::Sender<EncodedAudioFrame>,
-    ) -> Result<()> {
+    ) -> Result<(), WebrtcError> {
         tracing::debug!("Starting peer");
         if self.sender.is_some() || self.receiver.is_some() {
             tracing::warn!("Peer already started");
-            anyhow::bail!("Peer already started");
+            return Err(WebrtcError::CallActive);
         }
 
-        self.sender = Some(
-            crate::Sender::new(Arc::clone(&self.track), input_rx)
-                .await
-                .context("Failed to create sender")?,
-        );
-        self.receiver = Some(
-            crate::Receiver::new(&self.peer_connection, output_tx)
-                .await
-                .context("Failed to create receiver")?,
-        );
+        self.sender = Some(crate::Sender::new(Arc::clone(&self.track), input_rx).await);
+        self.receiver = Some(crate::Receiver::new(&self.peer_connection, output_tx).await);
 
         tracing::trace!("Successfully started peer");
         Ok(())
     }
 
     #[instrument(level = "debug", skip(self), err)]
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&mut self) -> Result<(), WebrtcError> {
         tracing::debug!("Stopping peer");
         if let Some(sender) = self.sender.take() {
             tracing::trace!("Shutting down sender");
@@ -179,7 +174,7 @@ impl Peer {
     }
 
     #[instrument(level = "debug", skip(self), err)]
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> Result<(), WebrtcError> {
         tracing::debug!("Closing peer");
         self.stop().await.context("Failed to stop peer")?;
 
@@ -198,7 +193,7 @@ impl Peer {
     }
 
     #[instrument(level = "trace", skip(self), err)]
-    pub async fn create_offer(&self) -> Result<String> {
+    pub async fn create_offer(&self) -> Result<String, WebrtcError> {
         tracing::trace!("Creating SDP offer");
 
         let offer = self
@@ -226,7 +221,7 @@ impl Peer {
     }
 
     #[instrument(level = "trace", skip(self, sdp), err)]
-    pub async fn accept_offer(&self, sdp: String) -> Result<String> {
+    pub async fn accept_offer(&self, sdp: String) -> Result<String, WebrtcError> {
         tracing::trace!("Creating SDP answer");
 
         let offer = serde_json::from_str::<RTCSessionDescription>(&sdp)
@@ -236,7 +231,11 @@ impl Peer {
             .await
             .context("Failed to set offer as remote description")?;
 
-        let answer = self.peer_connection.create_answer(None).await?;
+        let answer = self
+            .peer_connection
+            .create_answer(None)
+            .await
+            .context("Failed to create answer")?;
         self.peer_connection
             .set_local_description(answer)
             .await
@@ -256,7 +255,7 @@ impl Peer {
     }
 
     #[instrument(level = "trace", skip(self, sdp), err)]
-    pub async fn accept_answer(&self, sdp: String) -> Result<()> {
+    pub async fn accept_answer(&self, sdp: String) -> Result<(), WebrtcError> {
         tracing::trace!("Accepting SDP answer");
 
         let answer = serde_json::from_str::<RTCSessionDescription>(&sdp)
@@ -271,7 +270,7 @@ impl Peer {
     }
 
     #[instrument(level = "trace", skip(self, candidate), err)]
-    pub async fn add_remote_ice_candidate(&self, candidate: String) -> Result<()> {
+    pub async fn add_remote_ice_candidate(&self, candidate: String) -> Result<(), WebrtcError> {
         tracing::trace!("Adding remote ICE candidate");
 
         self.peer_connection

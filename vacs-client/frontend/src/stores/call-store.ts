@@ -41,7 +41,6 @@ export const useCallStore = create<CallState>()((set, get) => ({
                 clearTimeout(get().blinkTimeoutId);
                 set({blink: false, blinkTimeoutId: undefined, incomingCalls: []});
             }
-
             set({callDisplay: {type: "accepted", peerId: peerId}, incomingCalls});
         },
         endCall: () => {
@@ -107,11 +106,9 @@ export const useCallStore = create<CallState>()((set, get) => ({
                 return;
             }
 
-            console.log("error peer", peerId);
             set({callDisplay: {type: "error", peerId: peerId}});
 
             if (get().blinkTimeoutId === undefined) {
-                console.log("starting blink")
                 startBlink(set);
             }
         },
