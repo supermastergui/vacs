@@ -126,6 +126,7 @@ impl AudioManager {
             audio_config.input_device_name.as_deref(),
         )?;
         if is_fallback {
+            // TODO: Yellow error overlay border?
             app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
                 anyhow::anyhow!("Selected audio input device is not available, falling back to next best option. End your call to check your audio settings.")
             ))).into()).ok();
@@ -320,6 +321,7 @@ impl AudioManager {
             audio_config.output_device_name.as_deref(),
         )?;
         if is_fallback {
+            // TODO: Yellow error overlay border?
             app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
                 anyhow::anyhow!("Selected audio output device is not available, falling back to next best option. Check your audio settings.")
             ))).into()).ok();
@@ -385,6 +387,7 @@ impl AudioManager {
                         );
                     }
 
+                    // TODO: Yellow error overlay border?
                     app.emit::<FrontendError>("error", Error::from(err).into())
                         .ok();
                 }

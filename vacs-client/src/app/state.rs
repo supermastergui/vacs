@@ -6,9 +6,7 @@ pub(crate) mod webrtc;
 
 use crate::app::state::webrtc::Call;
 use crate::audio::manager::AudioManager;
-use crate::config::{
-    AppConfig, Persistable, PersistedAudioConfig, APP_USER_AGENT, AUDIO_SETTINGS_FILE_NAME,
-};
+use crate::config::{APP_USER_AGENT, AppConfig};
 use crate::secrets::cookies::SecureCookieStore;
 use crate::signaling::Connection;
 use anyhow::Context;
@@ -43,32 +41,10 @@ impl AppStateInner {
         );
         let config = AppConfig::parse(&config_dir)?;
 
-        let audio_manager = match AudioManager::new(app.clone(), &config.audio) {
-            Ok(audio_manager) => audio_manager,
-            Err(err) => {
-                log::warn!(
-                    "Failed to initialize audio manager with read config, falling back to default output device. Error: {err:?}"
-                );
-
-                let mut audio_config = config.audio.clone();
-                audio_config.output_device_name = None;
-
-                let audio_manager = AudioManager::new(app.clone(), &audio_config)?;
-
-                log::info!(
-                    "Audio manager initialized with fallback default output device. Persisting new audio config."
-                );
-                let persisted_audio_config: PersistedAudioConfig = audio_config.into();
-                persisted_audio_config.persist(&config_dir, AUDIO_SETTINGS_FILE_NAME)?;
-
-                audio_manager
-            }
-        };
-
         Ok(Self {
             config: config.clone(),
             connection: Connection::new(),
-            audio_manager,
+            audio_manager: AudioManager::new(app.clone(), &config.audio)?,
             http_client: reqwest::ClientBuilder::new()
                 .user_agent(APP_USER_AGENT)
                 .cookie_provider(cookie_store.clone())
