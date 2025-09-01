@@ -1,7 +1,7 @@
+use crate::app::state::AppState;
 use crate::app::state::audio::AppStateAudioExt;
 use crate::app::state::signaling::AppStateSignalingExt;
 use crate::app::state::webrtc::AppStateWebrtcExt;
-use crate::app::state::AppState;
 use crate::config::AudioConfig;
 use crate::error::{Error, FrontendError};
 use serde_json::Value;
@@ -9,14 +9,14 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
+use vacs_audio::EncodedAudioFrame;
 use vacs_audio::device::{DeviceSelector, DeviceType};
 use vacs_audio::error::AudioError;
+use vacs_audio::sources::AudioSourceId;
 use vacs_audio::sources::opus::OpusSource;
 use vacs_audio::sources::waveform::{Waveform, WaveformSource, WaveformTone};
-use vacs_audio::sources::AudioSourceId;
 use vacs_audio::stream::capture::{CaptureStream, InputLevel};
 use vacs_audio::stream::playback::PlaybackStream;
-use vacs_audio::EncodedAudioFrame;
 use vacs_protocol::ws::{CallErrorReason, SignalingMessage};
 
 const AUDIO_STREAM_ERROR_CHANNEL_SIZE: usize = 32;
@@ -126,10 +126,9 @@ impl AudioManager {
             audio_config.input_device_name.as_deref(),
         )?;
         if is_fallback {
-            // TODO: Yellow error overlay border?
-            app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
+            app.emit::<FrontendError>("error", FrontendError::from(Error::AudioDevice(Box::from(AudioError::Other(
                 anyhow::anyhow!("Selected audio input device is not available, falling back to next best option. End your call to check your audio settings.")
-            ))).into()).ok();
+            )))).non_critical()).ok();
         }
 
         let (error_tx, mut error_rx) = mpsc::channel(AUDIO_STREAM_ERROR_CHANNEL_SIZE);
@@ -281,9 +280,10 @@ impl AudioManager {
     ) -> Result<(), Error> {
         if self.source_ids.contains_key(&SourceType::Opus) {
             log::warn!("Tried to attach call but a call was already attached");
-            return Err(AudioError::Other(
-                anyhow::anyhow!("Tried to attach call but a call was already attached"),
-            ).into());
+            return Err(AudioError::Other(anyhow::anyhow!(
+                "Tried to attach call but a call was already attached"
+            ))
+            .into());
         }
 
         self.source_ids.insert(
@@ -321,10 +321,9 @@ impl AudioManager {
             audio_config.output_device_name.as_deref(),
         )?;
         if is_fallback {
-            // TODO: Yellow error overlay border?
-            app.emit::<FrontendError>("error", Error::AudioDevice(Box::from(AudioError::Other(
+            app.emit::<FrontendError>("error", FrontendError::from(Error::AudioDevice(Box::from(AudioError::Other(
                 anyhow::anyhow!("Selected audio output device is not available, falling back to next best option. Check your audio settings.")
-            ))).into()).ok();
+            )))).non_critical()).ok();
         }
 
         let sample_rate = output_device.sample_rate() as f32;
@@ -357,7 +356,7 @@ impl AudioManager {
                         if let Err(err) = state
                             .send_signaling_message(SignalingMessage::CallError {
                                 peer_id: peer_id.clone(),
-                                reason: CallErrorReason::AudioFailure
+                                reason: CallErrorReason::AudioFailure,
                             })
                             .await
                         {
@@ -387,9 +386,11 @@ impl AudioManager {
                         );
                     }
 
-                    // TODO: Yellow error overlay border?
-                    app.emit::<FrontendError>("error", Error::from(err).into())
-                        .ok();
+                    app.emit::<FrontendError>(
+                        "error",
+                        FrontendError::from(Error::from(err)).non_critical(),
+                    )
+                    .ok();
                 }
             }
             log::debug!("Playback stream error receiver closed");

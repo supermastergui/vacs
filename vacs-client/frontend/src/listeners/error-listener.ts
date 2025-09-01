@@ -10,7 +10,7 @@ export function setupErrorListeners() {
     const init = () => {
         unlistenFns.push(
             listen<Error>("error", (event) => {
-                openErrorOverlay(event.payload.title, event.payload.message, event.payload.timeout_ms);
+                openErrorOverlay(event.payload.title, event.payload.message, event.payload.isNonCritical, event.payload.timeoutMs);
             })
         );
     };

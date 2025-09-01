@@ -5,7 +5,8 @@ import {error} from "@tauri-apps/plugin-log";
 export type Error = {
     title: string;
     message: string;
-    timeout_ms?: number;
+    isNonCritical: boolean;
+    timeoutMs?: number;
 };
 
 export type CallError = {
@@ -34,10 +35,10 @@ export function openErrorOverlayFromUnknown(e: unknown) {
     const openErrorOverlay = useErrorOverlayStore.getState().open;
 
     if (isError(e)) {
-        openErrorOverlay(e.title, e.message, e.timeout_ms);
+        openErrorOverlay(e.title, e.message, false, e.timeoutMs);
     } else {
         void error(JSON.stringify(e));
-        openErrorOverlay("Unexpected error", "An unknown error occurred");
+        openErrorOverlay("Unexpected error", "An unknown error occurred", false);
     }
 }
 

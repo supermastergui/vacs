@@ -98,9 +98,11 @@ impl<R> LogErrExt<R> for Result<R, Error> {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FrontendError {
     title: String,
     message: String,
+    is_non_critical: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     timeout_ms: Option<u16>,
 }
@@ -110,8 +112,14 @@ impl FrontendError {
         Self {
             title: title.into(),
             message: message.into(),
+            is_non_critical: false,
             timeout_ms: None,
         }
+    }
+
+    pub fn non_critical(mut self) -> Self {
+        self.is_non_critical = true;
+        self
     }
 
     pub fn new_with_timeout(
