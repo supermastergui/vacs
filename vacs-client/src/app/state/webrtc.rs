@@ -103,10 +103,10 @@ impl AppStateWebrtcExt for AppStateInner {
                                 let app_state = app.state::<AppState>();
                                 let mut state = app_state.lock().await;
 
-                                // TODO detach webrtc sender and receiver so call can be reattached properly
                                 if let Some(call) = &mut state.active_call
                                     && call.peer_id == peer_id_clone
                                 {
+                                    call.peer.pause();
                                     state.audio_manager().detach_call_output();
                                     state.audio_manager().detach_input_device();
                                 }
@@ -247,7 +247,7 @@ impl AppStateInner {
             let (input_tx, input_rx) = mpsc::channel(ENCODED_AUDIO_FRAME_BUFFER_SIZE);
 
             log::debug!("Starting peer {peer_id} in WebRTC manager");
-            if let Err(err) = call.peer.start(input_rx, output_tx).await {
+            if let Err(err) = call.peer.start(input_rx, output_tx) {
                 log::warn!("Failed to start peer in WebRTC manager: {err:?}");
                 return Err(err.into());
             }

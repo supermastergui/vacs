@@ -6,48 +6,67 @@ use webrtc::peer_connection::RTCPeerConnection;
 
 pub struct Receiver {
     shutdown_tx: watch::Sender<()>,
+    output_selection_tx: watch::Sender<Option<mpsc::Sender<EncodedAudioFrame>>>,
 }
 
 impl Receiver {
     #[instrument(level = "trace", skip_all)]
-    pub async fn new(
+    pub fn new(
         peer_connection: &RTCPeerConnection,
         output_tx: mpsc::Sender<EncodedAudioFrame>,
     ) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(());
+        let (output_selection_tx, output_selection_rx) = watch::channel(Some(output_tx));
 
         peer_connection.on_track(Box::new(move |track, _, _| {
-            let output_tx = output_tx.clone();
             let mut shutdown_rx = shutdown_rx.clone();
+            let mut output_selection_rx = output_selection_rx.clone();
 
             Box::pin(async move {
+                let mut output_tx = output_selection_rx.borrow().clone();
+
                 loop {
                     tokio::select! {
-                            biased;
-                            _ = shutdown_rx.changed() => {
-                                tracing::trace!("Shutdown signalled, stopping receiver");
-                                break;
-                            }
-                            rtp = track.read_rtp() => {
-                                match rtp {
-                                    Ok((packet, _)) => {
-                                        if output_tx.send(packet.payload).await.is_err() {
+                        biased;
+                        _ = shutdown_rx.changed() => {
+                            tracing::trace!("Shutdown signalled, stopping receiver");
+                            break;
+                        }
+                        _ = output_selection_rx.changed() => {
+                            output_tx = output_selection_rx.borrow().clone();
+                        }
+                        rtp = track.read_rtp() => {
+                            match rtp {
+                                Ok((packet, _)) => {
+                                    if let Some(output_tx) = output_tx.as_ref() &&
+                                        output_tx.send(packet.payload).await.is_err() {
                                             tracing::warn!("Failed to send received RTP packet to output");
                                             break;
-                                        }
                                     }
-                                    Err(err) => {
-                                        tracing::warn!(?err, "Failed to read RTP packet");
-                                        break;
-                                    }
+                                }
+                                Err(err) => {
+                                    tracing::warn!(?err, "Failed to read RTP packet");
+                                    break;
                                 }
                             }
                         }
+                    }
                 }
             })
         }));
 
-        Self { shutdown_tx }
+        Self {
+            shutdown_tx,
+            output_selection_tx,
+        }
+    }
+
+    pub fn pause(&self) {
+        let _ = self.output_selection_tx.send(None);
+    }
+
+    pub fn resume(&self, output_tx: mpsc::Sender<EncodedAudioFrame>) {
+        let _ = self.output_selection_tx.send(Some(output_tx));
     }
 
     pub fn shutdown(&self) {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::{instrument, Instrument};
+use tracing::{Instrument, instrument};
 use vacs_audio::{EncodedAudioFrame, FRAME_DURATION_MS};
 use webrtc::media::Sample;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
@@ -15,7 +15,7 @@ pub struct Sender {
 
 impl Sender {
     #[instrument(level = "trace", skip_all)]
-    pub async fn new(
+    pub fn new(
         track: Arc<TrackLocalStaticSample>,
         mut input_rx: mpsc::Receiver<EncodedAudioFrame>,
     ) -> Self {

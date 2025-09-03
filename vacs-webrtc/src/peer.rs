@@ -139,22 +139,40 @@ impl Peer {
     }
 
     #[instrument(level = "debug", skip_all, err)]
-    pub async fn start(
+    pub fn start(
         &mut self,
         input_rx: mpsc::Receiver<EncodedAudioFrame>,
         output_tx: mpsc::Sender<EncodedAudioFrame>,
     ) -> Result<(), WebrtcError> {
         tracing::debug!("Starting peer");
-        if self.sender.is_some() || self.receiver.is_some() {
-            tracing::warn!("Peer already started");
+        if self.sender.is_some() {
+            tracing::warn!("Peer sender already started");
             return Err(WebrtcError::CallActive);
         }
 
-        self.sender = Some(crate::Sender::new(Arc::clone(&self.track), input_rx).await);
-        self.receiver = Some(crate::Receiver::new(&self.peer_connection, output_tx).await);
+        if let Some(receiver) = self.receiver.as_ref() {
+            tracing::trace!("Resuming receiver");
+            receiver.resume(output_tx);
+        } else {
+            tracing::trace!("Starting receiver");
+            self.receiver = Some(crate::Receiver::new(&self.peer_connection, output_tx));
+        }
+
+        self.sender = Some(crate::Sender::new(Arc::clone(&self.track), input_rx));
 
         tracing::trace!("Successfully started peer");
         Ok(())
+    }
+
+    #[instrument(level = "debug", skip_all)]
+    pub fn pause(&mut self) {
+        tracing::debug!("Pausing peer");
+        if let Some(sender) = self.sender.take() {
+            sender.shutdown();
+        }
+        if let Some(receiver) = self.receiver.as_mut() {
+            receiver.pause();
+        }
     }
 
     #[instrument(level = "debug", skip(self), err)]
