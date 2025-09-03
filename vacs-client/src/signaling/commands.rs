@@ -56,6 +56,7 @@ pub async fn signaling_terminate(
 #[tauri::command]
 #[vacs_macros::log_err]
 pub async fn signaling_start_call(
+    app: AppHandle,
     app_state: State<'_, AppState>,
     peer_id: String,
 ) -> Result<(), Error> {
@@ -68,6 +69,8 @@ pub async fn signaling_start_call(
             peer_id: peer_id.clone(),
         })
         .await?;
+
+    state.add_call_to_call_list(&app, &peer_id, false);
 
     state.set_outgoing_call_peer_id(Some(peer_id));
     state.audio_manager().restart(SourceType::Ringback);

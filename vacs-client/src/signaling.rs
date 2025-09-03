@@ -180,6 +180,8 @@ impl Connection {
                 let state = app.state::<AppState>();
                 let mut state = state.lock().await;
 
+                state.add_call_to_call_list(app, &peer_id, true);
+
                 if state.incoming_call_peer_ids_len() >= INCOMING_CALLS_LIMIT {
                     if let Err(err) = state
                         .send_signaling_message(SignalingMessage::CallReject {

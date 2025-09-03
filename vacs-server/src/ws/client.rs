@@ -183,7 +183,7 @@ impl ClientSession {
                         tracing::trace!("App shutdown signal received, stopping WebSocket reader task");
                         break;
                     }
-                    
+
                     _ = client_shutdown_rx.changed() => {
                         tracing::trace!("Client shutdown signal received, stopping WebSocket reader task");
                         break;
@@ -239,7 +239,7 @@ impl ClientSession {
                         tracing::trace!("App shutdown signal received, stopping WebSocket reader task");
                         break;
                     }
-                    
+
                     _ = client_shutdown_rx.changed() => {
                         tracing::trace!("Client shutdown signal received, stopping WebSocket reader task");
                         break;

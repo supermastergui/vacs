@@ -3,10 +3,14 @@ import "../styles/call-list.css";
 import {CallListItem, useCallListStore} from "../stores/call-list-store.ts";
 import {clsx} from "clsx";
 import {HEADER_HEIGHT_REM, useCallList} from "../hooks/call-list-hook.ts";
+import {invokeStrict} from "../error.ts";
+import {useCallStore} from "../stores/call-store.ts";
 
 function CallList() {
     const calls = useCallListStore(state => state.callList);
     const {clearCallList} = useCallListStore(state => state.actions);
+    const callDisplay = useCallStore(state => state.callDisplay);
+    const {setOutgoingCall, removePeer} = useCallStore(state => state.actions);
 
     const {
         listContainer,
@@ -77,7 +81,20 @@ function CallList() {
                     <p>Delete<br/>List</p>
                 </Button>
                 <Button color="gray" className="w-56 text-xl"
-                        onClick={() => console.log("Calling: ", calls[selectedCall]?.number ?? "NONE")}>Call</Button>
+                        disabled={calls[selectedCall]?.number === undefined}
+                        onClick={async () => {
+                            const peerId: string | undefined = calls[selectedCall]?.number;
+                            if (peerId === undefined || callDisplay !== undefined) return;
+                            try {
+                                setOutgoingCall(peerId);
+                                await invokeStrict("signaling_start_call", {peerId: peerId});
+                            } catch {
+                                removePeer(peerId);
+                            }
+                        }}
+                >
+                    Call
+                </Button>
             </div>
         </div>
     );

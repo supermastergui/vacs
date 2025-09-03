@@ -4,6 +4,7 @@ use crate::app::state::{AppState, AppStateInner, sealed};
 use crate::audio::manager::SourceType;
 use crate::config::BackendEndpoint;
 use crate::error::{Error, FrontendError};
+use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::oneshot;
@@ -20,6 +21,7 @@ pub trait AppStateSignalingExt: sealed::Sealed {
     fn incoming_call_peer_ids_len(&self) -> usize;
     fn add_incoming_call_peer_id(&mut self, peer_id: &str);
     fn remove_incoming_call_peer_id(&mut self, peer_id: &str) -> bool;
+    fn add_call_to_call_list(&mut self, app: &AppHandle, peer_id: &str, incoming: bool);
 }
 
 impl AppStateSignalingExt for AppStateInner {
@@ -146,6 +148,21 @@ impl AppStateSignalingExt for AppStateInner {
             self.audio_manager.stop(SourceType::Ring);
         }
         found
+    }
+
+    fn add_call_to_call_list(&mut self, app: &AppHandle, peer_id: &str, incoming: bool) {
+        #[derive(Clone, Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct CallListEntry<'a> {
+            peer_id: &'a str,
+            incoming: bool,
+        }
+
+        app.emit(
+            "signaling:add-to-call-list",
+            CallListEntry { peer_id, incoming },
+        )
+        .ok();
     }
 }
 
