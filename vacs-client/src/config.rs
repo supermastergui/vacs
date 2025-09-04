@@ -63,8 +63,18 @@ pub struct BackendConfig {
 impl Default for BackendConfig {
     fn default() -> Self {
         Self {
-            base_url: "http://127.0.0.1:3000".to_string(),
-            ws_url: "ws://127.0.0.1:3000/ws".to_string(),
+            base_url: if cfg!(debug_assertions) {
+                "https://vacs-dev.gusch.jetzt"
+            } else {
+                "https://vacs.gusch.jetzt"
+            }
+            .to_string(),
+            ws_url: if cfg!(debug_assertions) {
+                "wss://vacs-dev.gusch.jetzt/ws"
+            } else {
+                "wss://vacs.gusch.jetzt/ws"
+            }
+            .to_string(),
             endpoints: BackendEndpointsConfigs::default(),
             timeout_ms: 2000,
         }
