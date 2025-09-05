@@ -10,6 +10,7 @@
     "deep-link:default",
     "log:default",
     "opener:default",
-    "log:default"
+    "log:default",
+    "core:window:allow-set-always-on-top"
   ]
 }

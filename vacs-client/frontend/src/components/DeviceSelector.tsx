@@ -25,12 +25,20 @@ function DeviceSelector(props: DeviceSelectorProps) {
             const isFallback = audioDevices.preferred.length !== 0 && audioDevices.preferred !== audioDevices.picked;
             const defaultDevice = {value: "", text: `Default (${audioDevices.default})`, className: "text-initial"};
 
-            let deviceList: SelectOption[] = audioDevices.all.map((deviceName) => {
-                return {value: deviceName, text: deviceName, className: isFallback && deviceName === audioDevices.picked ? "text-green-700" : "text-initial"};
-            });
+            let deviceList: SelectOption[] = audioDevices.all.map((deviceName) => ({
+                value: deviceName,
+                text: deviceName,
+                className: isFallback && deviceName === audioDevices.picked ? "text-green-700" : "text-initial"
+            }));
+
             deviceList = [defaultDevice, ...deviceList];
             if (isFallback) {
-                deviceList.push({value: audioDevices.preferred, text: audioDevices.preferred, hidden: true, disabled: true});
+                deviceList.push({
+                    value: audioDevices.preferred,
+                    text: audioDevices.preferred,
+                    hidden: true,
+                    disabled: true
+                });
             }
 
             setIsFallback(isFallback);

@@ -46,12 +46,25 @@ pub fn run() {
 
             log::info!("{:?}", VersionInfo::gather());
 
-            app.manage(Mutex::new(AppStateInner::new(app.handle())?));
+            let state = AppStateInner::new(app.handle())?;
+
+            if state.config.client.always_on_top {
+                if let Err(err) = app.get_webview_window("main")
+                    .unwrap()
+                    .set_always_on_top(true) {
+                    log::warn!("Failed to set main window always on top: {err}");
+                } else {
+                    log::debug!("Set main window to be always on top");
+                }
+            }
+
+            app.manage(Mutex::new(state));
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             app::commands::app_frontend_ready,
+            app::commands::app_set_always_on_top,
             audio::commands::audio_get_devices,
             audio::commands::audio_get_hosts,
             audio::commands::audio_get_volumes,

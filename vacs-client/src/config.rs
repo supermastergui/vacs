@@ -11,6 +11,7 @@ pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CAR
 pub const WS_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const WS_READY_TIMEOUT: Duration = Duration::from_secs(10);
 pub const AUDIO_SETTINGS_FILE_NAME: &str = "audio.toml";
+pub const CLIENT_SETTINGS_FILE_NAME: &str = "client.toml";
 pub const ENCODED_AUDIO_FRAME_BUFFER_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -18,6 +19,7 @@ pub struct AppConfig {
     pub backend: BackendConfig,
     pub audio: AudioConfig,
     pub webrtc: WebrtcConfig,
+    pub client: ClientConfig,
 }
 
 impl AppConfig {
@@ -42,6 +44,15 @@ impl AppConfig {
                         .expect("Failed to get local config path"),
                 )
                 .required(false),
+            )
+            .add_source(
+                File::with_name(
+                    config_dir
+                        .join("client.toml")
+                        .to_str()
+                        .expect("Failed to get local config path"),
+                )
+                    .required(false),
             )
             .add_source(File::with_name("audio.toml").required(false))
             .add_source(Environment::with_prefix("vacs_client"))
@@ -164,6 +175,22 @@ pub struct PersistedAudioConfig {
 impl From<AudioConfig> for PersistedAudioConfig {
     fn from(audio: AudioConfig) -> Self {
         Self { audio }
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct ClientConfig {
+    pub always_on_top: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct PersistedClientConfig {
+    pub client: ClientConfig,
+}
+
+impl From<ClientConfig> for PersistedClientConfig {
+    fn from(client: ClientConfig) -> Self {
+        Self { client }
     }
 }
 
