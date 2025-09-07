@@ -1,4 +1,4 @@
-name: vacs-server
+name: Release • vacs-server
 
 on:
   push:
