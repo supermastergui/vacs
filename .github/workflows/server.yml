@@ -65,7 +65,7 @@ jobs:
             type=semver,pattern={{version}},value=${{ inputs.version }},match=(\d+\.\d+\.\d+),enable=${{ github.event_name == 'workflow_dispatch' }}
             type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},match=(\d+\.\d+\.\d+),enable=${{ github.event_name == 'workflow_dispatch' }}
             # major tag only when major >= 1
-            type=semver,pattern={{major}},value=${{ inputs.version }},match=(\d+\.\d+\.\d+),enable=${{ github.event_name == 'workflow_dispatch' && !contains(inputs.version,'v0.') }}
+            type=semver,pattern={{major}},value=${{ inputs.version }},match=(\d+\.\d+\.\d+),enable=${{ github.event_name == 'workflow_dispatch' && !startsWith(inputs.version,'0.') && !contains(inputs.version,'v0.') }}
 
       - name: Build and push
         id: build
