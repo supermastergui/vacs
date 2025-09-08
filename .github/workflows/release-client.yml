@@ -110,13 +110,7 @@ jobs:
           # override version info built into client
           echo "VACS_VERSION_OVERRIDE=${{ needs.prep.outputs.version }}" >> "$GITHUB_ENV"
           # build tauri user config with version info
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Escape double quotes for Windows arg parsing
-            echo "EXTRA_TAURI_ARGS=--config {\\\"version\\\":\\\"${{ needs.prep.outputs.version }}\\\"}" >> "$GITHUB_ENV"
-          else
-            # POSIX shells: wrap JSON in single quotes so quotes survive
-            echo "EXTRA_TAURI_ARGS=--config '{\"version\":\"${{ needs.prep.outputs.version }}\"}'" >> "$GITHUB_ENV"
-          fi
+          echo "EXTRA_TAURI_ARGS=--config '{\"version\":\"${{ needs.prep.outputs.version }}\"}'" >> "$GITHUB_ENV"
 
       - name: Install build dependencies
         if: matrix.platform == 'ubuntu-22.04'
