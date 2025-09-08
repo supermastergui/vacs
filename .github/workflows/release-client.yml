@@ -16,13 +16,73 @@ on:
         default: ''
         type: string
 
-permissions:
-  attestations: write
-  contents: write
-  id-token: write
-
 jobs:
+  prep:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      tag: ${{ steps.vars.outputs.tag }}
+      draft: ${{ steps.vars.outputs.draft }}
+      prerelease: ${{ steps.vars.outputs.prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve version & tag
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            RAW="${{ inputs.version }}"
+          else
+            RAW="${GITHUB_REF_NAME}"  # e.g. vacs-client-v1.2.3
+          fi
+
+          # Extract X.Y.Z from: 1.2.3 | v1.2.3 | vacs-client-v1.2.3
+          if [[ "$RAW" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            VER="${BASH_REMATCH[1]}"
+          else
+            echo "Could not parse semver from: $RAW" >&2
+            exit 1
+          fi
+
+          TAG="vacs-client-v${VER}"
+
+          # Draft release when manual; published on tag-push
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            DRAFT=true
+          else
+            DRAFT=false
+          fi
+
+          # Mark prerelease if version contains a prerelease part (e.g., -rc.1)
+          if [[ "$RAW" =~ -[A-Za-z0-9] ]]; then
+            PRERELEASE=true
+          else
+            PRERELEASE=false
+          fi
+
+          echo "version=$VER"       >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "draft=$DRAFT"       >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare additional version information for manual release
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          # create/update a lightweight tag locally so vergen sees it
+          git tag -f "${{ steps.vars.outputs.tag }}" HEAD
+          git describe --tags --always
+          # override version info built into client
+          echo "VACS_VERSION_OVERRIDE=${{ steps.vars.outputs.version }}" >> "$GITHUB_ENV"
+
   release:
+    needs: prep
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +93,10 @@ jobs:
             args: ''
 
     runs-on: ${{ matrix.platform }}
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -107,16 +171,6 @@ jobs:
         working-directory: vacs-client
         run: npm ci
 
-      - name: Prepare additional version information for manual release
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        shell: bash
-        run: |
-          # create/update a lightweight tag locally so vergen sees it
-          git tag -f "${{ steps.vars.outputs.tag }}" HEAD
-          git describe --tags --always
-          # override version info built into client
-          echo "VACS_VERSION_OVERRIDE=${{ steps.vars.outputs.version }}" >> "$GITHUB_ENV"
-
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
@@ -129,3 +183,60 @@ jobs:
           releaseDraft: ${{ steps.vars.outputs.draft }}
           prerelease: ${{ steps.vars.outputs.prerelease }}
           includeUpdaterJson: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.msi.sig
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.exe.sig
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.deb.sig
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.rpm.sig
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.AppImage.sig
+
+  finalize:
+    needs: [prep, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir dist
+          gh release download "${{ steps.vars.outputs.tag }}" -R "${{ github.repository }}" --dir dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          find . -type f \
+            ! -name 'SHA256SUMS*' \
+            -print0 | sort -z | xargs -0 shasum -a 256 > "SHA256SUMS-${{ needs.prep.outputs.version }}.txt"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums using Cosign with GitHub OIDC Token
+        working-directory: dist
+        run: |
+          cosign sign-blob --yes \
+            --output-signature "SHA256SUMS-${{ needs.prep.outputs.version }}.txt.sig" \
+            --output-certificate "SHA256SUMS-${{ needs.prep.outputs.version }}.txt.pem" \
+            "SHA256SUMS-${{ needs.prep.outputs.version }}.txt"
+
+      - name: Upload release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.vars.outputs.tag }}" -R "${{ github.repository }}" --clobber \
+            SHA256SUMS-${{ needs.prep.outputs.version }}.txt \
+            SHA256SUMS-${{ needs.prep.outputs.version }}.txt.sig \
+            SHA256SUMS-${{ needs.prep.outputs.version }}.txt.pem
