@@ -37,7 +37,41 @@
       "frontend/icons/128x128@2x.png",
       "frontend/icons/icon.icns",
       "frontend/icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2",
+          "libpulse0",
+          "libopus0",
+          "libssl3",
+          "desktop-file-utils",
+          "shared-mime-info",
+          "xdg-utils"
+        ],
+        "recommends": [
+          "pipewire-pulse",
+          "pipewire-alsa",
+          "libasound2-plugins"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "alsa-lib",
+          "pulseaudio-libs",
+          "opus",
+          "openssl-libs",
+          "desktop-file-utils",
+          "shared-mime-info",
+          "xdg-utils"
+        ],
+        "recommends": [
+          "pipewire-pulseaudio",
+          "pipewire-alsa",
+          "alsa-plugins-pulseaudio"
+        ]
+      }
+    }
   },
   "plugins": {
     "deep-link": {
