@@ -32,9 +32,9 @@ tower-sessions = { workspace = true }
 tower-sessions-redis-store = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
 vacs-protocol = { workspace = true }
 vacs-vatsim = { workspace = true }
-uuid = { version = "1.17.0", features = ["v4"] }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true, features = ["unstable"] }
