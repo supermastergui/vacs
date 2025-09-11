@@ -141,3 +141,6 @@ target/
 # Tauri updater signing key
 *.key
 *.key.pub
+
+# Secrets and other local-only config
+/.envrc
