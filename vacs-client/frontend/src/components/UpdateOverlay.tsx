@@ -3,9 +3,10 @@ import {useUpdateStore} from "../stores/update-store.ts";
 import Button from "./ui/Button.tsx";
 import {useCallback, useEffect, useRef, useState} from "preact/hooks";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {invoke} from "@tauri-apps/api/core";
 import {useAsyncDebounceState} from "../hooks/debounce-hook.ts";
 import {listen, UnlistenFn} from "@tauri-apps/api/event";
+import {invokeStrict} from "../error.ts";
+import {getVersion} from "@tauri-apps/api/app";
 
 function UpdateOverlay() {
     const overlayVisible = useUpdateStore(state => state.overlayVisible);
@@ -25,20 +26,21 @@ function UpdateOverlay() {
     const [handleUpdateClick, updating] = useAsyncDebounceState(async () => {
         try {
             openDownloadDialog();
-            await invoke("app_update");
+            await invokeStrict("app_update");
         } catch (e) {
-            // TODO: Open fatal error overlay
+            openMandatoryDialog();
         }
     });
 
     useEffect(() => {
         const checkForUpdate = async () => {
             try {
-                const checkUpdateResult = await invoke<{
+                const checkUpdateResult = await invokeStrict<{
                     currentVersion: string,
                     newVersion?: string,
                     required: boolean
                 }>("app_check_for_update");
+
                 setUpdateVersions(checkUpdateResult.currentVersion, checkUpdateResult.newVersion);
 
                 if (checkUpdateResult.required) {
@@ -47,8 +49,8 @@ function UpdateOverlay() {
                     closeOverlay();
                 }
             } catch (e) {
-                console.error(e);
-                // TODO: Open fatal error overlay
+                setUpdateVersions(await getVersion());
+                closeOverlay();
             }
         };
         void checkForUpdate();

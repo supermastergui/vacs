@@ -23,7 +23,7 @@ function InfoGrid() {
         <div className="grid grid-rows-2 w-full h-full" style={{gridTemplateColumns: "25% 32.5% 42.5%"}}>
             <div className="info-grid-cell" title={cid}>{cid}</div>
             <div className="info-grid-cell cursor-pointer" title={versionText}
-                 onClick={handleVersionClick}>{versionText}</div>
+                 onClick={handleVersionClick}>{currentVersion !== "" ? versionText : ""}</div>
             <div className="info-grid-cell"></div>
             <div className="info-grid-cell" title={displayName}>{displayName}</div>
             <div className="info-grid-cell"></div>

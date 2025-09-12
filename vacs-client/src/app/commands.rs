@@ -1,7 +1,7 @@
 use crate::app::state::AppState;
-use crate::app::{get_update, UpdateInfo};
+use crate::app::{UpdateInfo, get_update};
 use crate::build::VersionInfo;
-use crate::config::{Persistable, PersistedClientConfig, CLIENT_SETTINGS_FILE_NAME};
+use crate::config::{CLIENT_SETTINGS_FILE_NAME, Persistable, PersistedClientConfig};
 use crate::error::Error;
 use anyhow::Context;
 use tauri::{AppHandle, Emitter, Manager, State, Window};
@@ -41,6 +41,7 @@ pub async fn app_check_for_update(app: AppHandle) -> Result<UpdateInfo, Error> {
             required,
         }
     } else {
+        log::info!("No update available");
         UpdateInfo {
             current_version,
             new_version: None,
