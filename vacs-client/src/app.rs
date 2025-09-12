@@ -65,10 +65,16 @@ pub fn open_fatal_error_dialog(app: &AppHandle, msg: &str) {
         MessageDialogResult::Custom(text) if text == open_logs => {
             if let Err(err) = open_logs_folder(app) {
                 log::error!("Failed to open logs folder: {err}");
+
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("Fatal Error")
+                    .set_description("Failed to open the logs folder.")
+                    .show();
             }
         }
         _ => {}
-    }
+    };
 }
 
 pub fn open_logs_folder(app: &AppHandle) -> Result<(), Error> {
