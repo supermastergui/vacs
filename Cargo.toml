@@ -40,6 +40,7 @@ parking_lot = "0.12.4"
 pretty_assertions = "1.4.1"
 quote = "1.0.40"
 reqwest = { version = "0.12.23", features = ["json", "cookies"] }
+rfd = { version = "0.15.4", features = ["common-controls-v6"] }
 ringbuf = "0.4.8"
 rubato = "0.16.2"
 semver = { version = "1.0.26", features = ["serde"] }
@@ -49,7 +50,6 @@ syn = { version = "2.0.106", features = ["full"] }
 tauri = "2.8.5"
 tauri-build = "2.4.1"
 tauri-plugin-deep-link = "2.4.3"
-tauri-plugin-dialog = "2.4.0"
 tauri-plugin-log = "2.7.0"
 tauri-plugin-opener = "2.5.0"
 tauri-plugin-single-instance = "2.3.4"

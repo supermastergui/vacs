@@ -2,11 +2,9 @@ use crate::app::state::AppState;
 use crate::config::BackendEndpoint;
 use crate::error::Error;
 use anyhow::Context;
+use rfd::{MessageButtons, MessageDialogResult};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
-};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
@@ -51,30 +49,26 @@ pub async fn get_update(app: &AppHandle) -> Result<Option<Update>, Error> {
 
 pub fn open_fatal_error_dialog(app: &AppHandle, msg: &str) {
     let open_logs = "Open logs folder";
-    let result = app
-        .dialog()
-        .message(msg)
-        .kind(MessageDialogKind::Error)
-        .title("Fatal Error")
-        .buttons(MessageDialogButtons::OkCancelCustom(
+    let mut dialog = rfd::MessageDialog::new()
+        .set_level(rfd::MessageLevel::Error)
+        .set_title("Fatal Error")
+        .set_description(msg)
+        .set_buttons(MessageButtons::OkCancelCustom(
             open_logs.to_string(),
             "Close".to_string(),
-        ))
-        .blocking_show_with_result();
+        ));
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
 
-    match result {
+    match dialog.show() {
         MessageDialogResult::Custom(text) if text == open_logs => {
             if let Err(err) = open_logs_folder(app) {
                 log::error!("Failed to open logs folder: {err}");
-                app.dialog()
-                    .message("Failed to open the logs folder.")
-                    .kind(MessageDialogKind::Error)
-                    .title("Fatal Error")
-                    .blocking_show();
             }
         }
         _ => {}
-    };
+    }
 }
 
 pub fn open_logs_folder(app: &AppHandle) -> Result<(), Error> {
