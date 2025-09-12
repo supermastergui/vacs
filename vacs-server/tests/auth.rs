@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 use std::time::Duration;
 use test_log::test;
 use tokio_tungstenite::tungstenite;
-use vacs_protocol::PROTOCOL_CRATE_VERSION;
+use vacs_protocol::VACS_PROTOCOL_VERSION;
 use vacs_protocol::ws::{LoginFailureReason, SignalingMessage};
 use vacs_server::test_utils::{
     TestApp, TestClient, assert_message_matches, assert_raw_message_matches, connect_to_websocket,
@@ -118,7 +118,7 @@ async fn login_timeout() {
         .send(tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token".to_string(),
-                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
+                protocol_version: VACS_PROTOCOL_VERSION.to_string(),
             })
             .unwrap(),
         ))

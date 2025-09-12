@@ -97,7 +97,7 @@ mod tests {
     use test_log::test;
     use tokio::sync::{Mutex, mpsc};
     use tokio_tungstenite::tungstenite;
-    use vacs_protocol::PROTOCOL_CRATE_VERSION;
+    use vacs_protocol::VACS_PROTOCOL_VERSION;
     use vacs_protocol::ws::ClientInfo;
 
     #[test(tokio::test)]
@@ -139,7 +139,7 @@ mod tests {
         let messages = vec![
             SignalingMessage::Login {
                 token: "token1".to_string(),
-                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
+                protocol_version: VACS_PROTOCOL_VERSION.to_string(),
             },
             SignalingMessage::ListClients,
             SignalingMessage::Logout,
@@ -173,7 +173,7 @@ mod tests {
         let messages = vec![
             SignalingMessage::Login {
                 token: "token1".to_string(),
-                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
+                protocol_version: VACS_PROTOCOL_VERSION.to_string(),
             },
             SignalingMessage::ListClients,
             SignalingMessage::Logout,

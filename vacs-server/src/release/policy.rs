@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tracing::instrument;
-use vacs_protocol::PROTOCOL_CRATE_VERSION;
+use vacs_protocol::VACS_PROTOCOL_VERSION;
 use vacs_protocol::http::version::ReleaseChannel;
 
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl Policy {
                 )
             })?;
 
-        let server_protocol_version = Version::parse(PROTOCOL_CRATE_VERSION)
+        let server_protocol_version = Version::parse(VACS_PROTOCOL_VERSION)
             .context("Failed to parse server protocol crate version")?;
         if !compatible_protocol_range.matches(&server_protocol_version) {
             return Err(anyhow::anyhow!(

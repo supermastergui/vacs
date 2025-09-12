@@ -226,14 +226,14 @@ impl SignalingMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PROTOCOL_CRATE_VERSION;
+    use crate::VACS_PROTOCOL_VERSION;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_serialize_deserialize_login() {
         let message = SignalingMessage::Login {
             token: "token1".to_string(),
-            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
+            protocol_version: VACS_PROTOCOL_VERSION.to_string(),
         };
 
         let serialized = SignalingMessage::serialize(&message).unwrap();
