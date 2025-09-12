@@ -97,6 +97,7 @@ mod tests {
     use test_log::test;
     use tokio::sync::{Mutex, mpsc};
     use tokio_tungstenite::tungstenite;
+    use vacs_protocol::PROTOCOL_CRATE_VERSION;
     use vacs_protocol::ws::ClientInfo;
 
     #[test(tokio::test)]
@@ -138,6 +139,7 @@ mod tests {
         let messages = vec![
             SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             },
             SignalingMessage::ListClients,
             SignalingMessage::Logout,
@@ -171,6 +173,7 @@ mod tests {
         let messages = vec![
             SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             },
             SignalingMessage::ListClients,
             SignalingMessage::Logout,
@@ -232,7 +235,7 @@ mod tests {
     #[test(tokio::test)]
     async fn receive_single_message() {
         let mut mock_stream = MockStream::new(vec![Ok(ws::Message::from(
-            "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\"}",
+            "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\",\"protocolVersion\":\"0.0.0\"}",
         ))]);
 
         let result = receive_message(&mut mock_stream).await;
@@ -240,7 +243,8 @@ mod tests {
         assert_eq!(
             result,
             MessageResult::ApplicationMessage(SignalingMessage::Login {
-                token: "token1".to_string()
+                token: "token1".to_string(),
+                protocol_version: "0.0.0".to_string(),
             })
         );
     }
@@ -249,7 +253,7 @@ mod tests {
     async fn receive_multiple_messages() {
         let mut mock_stream = MockStream::new(vec![
             Ok(ws::Message::from(
-                "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\"}",
+                "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\",\"protocolVersion\":\"0.0.0\"}",
             )),
             Ok(ws::Message::from("{\"type\":\"Logout\"}")),
             Ok(ws::Message::from(
@@ -260,7 +264,8 @@ mod tests {
         assert_eq!(
             receive_message(&mut mock_stream).await,
             MessageResult::ApplicationMessage(SignalingMessage::Login {
-                token: "token1".to_string()
+                token: "token1".to_string(),
+                protocol_version: "0.0.0".to_string(),
             })
         );
         assert_eq!(
@@ -280,7 +285,7 @@ mod tests {
     async fn receive_messages_concurrently() {
         let mock_stream = Arc::new(Mutex::new(MockStream::new(vec![
             Ok(ws::Message::from(
-                "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\"}",
+                "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\",\"protocolVersion\":\"0.0.0\"}",
             )),
             Ok(ws::Message::from("{\"type\":\"Logout\"}")),
             Ok(ws::Message::from(
@@ -307,14 +312,17 @@ mod tests {
 
     #[test(tokio::test)]
     async fn receive_replayed_messages() {
-        let msg = ws::Message::from("{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\"}");
+        let msg = ws::Message::from(
+            "{\"type\":\"Login\",\"id\":\"client1\",\"token\":\"token1\",\"protocolVersion\":\"0.0.0\"}",
+        );
         let mut mock_stream = MockStream::new(vec![Ok(msg.clone()), Ok(msg)]);
 
         for _ in 0..2 {
             assert_eq!(
                 receive_message(&mut mock_stream).await,
                 MessageResult::ApplicationMessage(SignalingMessage::Login {
-                    token: "token1".to_string()
+                    token: "token1".to_string(),
+                    protocol_version: "0.0.0".to_string(),
                 })
             );
         }

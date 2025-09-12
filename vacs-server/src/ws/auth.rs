@@ -3,6 +3,7 @@ use crate::ws::message::{MessageResult, receive_message, send_message_raw};
 use axum::extract::ws;
 use axum::extract::ws::WebSocket;
 use futures_util::stream::{SplitSink, SplitStream};
+use semver::Version;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::instrument;
@@ -18,7 +19,22 @@ pub async fn handle_websocket_login(
     match tokio::time::timeout(Duration::from_millis(state.config.auth.login_flow_timeout_millis), async {
         loop {
             return match receive_message(websocket_receiver).await {
-                MessageResult::ApplicationMessage(SignalingMessage::Login { token }) => {
+                MessageResult::ApplicationMessage(SignalingMessage::Login { token, protocol_version }) => {
+                    let is_compatible_protocol = Version::parse(&protocol_version)
+                        .map(|version| state.updates.is_compatible_protocol(version)).unwrap_or(false);
+                    if !is_compatible_protocol {
+                        tracing::debug!("Websocket login flow failed, due to incompatible protocol version");
+                        let login_failure_message = SignalingMessage::LoginFailure {
+                            reason: LoginFailureReason::IncompatibleProtocolVersion,
+                        };
+                        if let Err(err) =
+                            send_message_raw(websocket_sender, login_failure_message).await
+                        {
+                            tracing::warn!(?err, "Failed to send websocket login failure message");
+                        }
+                        return None;
+                    }
+
                     match state.verify_ws_auth_token(token.as_str()).await {
                         Ok(cid) => {
                             tracing::trace!(?cid, "Websocket login flow completed");

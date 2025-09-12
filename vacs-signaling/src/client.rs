@@ -8,6 +8,7 @@ use tokio::sync::{Mutex, broadcast, mpsc, oneshot, watch};
 use tokio::task::JoinSet;
 use tokio_tungstenite::tungstenite;
 use tracing::{Instrument, instrument};
+use vacs_protocol::PROTOCOL_CRATE_VERSION;
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
 const BROADCAST_CHANNEL_SIZE: usize = 100;
@@ -136,6 +137,7 @@ impl SignalingClient {
         tracing::debug!("Sending Login message to server");
         self.send(SignalingMessage::Login {
             token: token.to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         })
         .await?;
 
@@ -479,6 +481,7 @@ mod tests {
 
         let msg = SignalingMessage::Login {
             token: "test".to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
 
         let result = client.send(msg.clone()).await;
@@ -498,6 +501,7 @@ mod tests {
 
         let msg = SignalingMessage::Login {
             token: "test".to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
 
         let result = client.send(msg.clone()).await;
@@ -546,6 +550,7 @@ mod tests {
 
         let msg = SignalingMessage::Login {
             token: "test".to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
 
         let result = client.send(msg.clone()).await;
@@ -572,6 +577,7 @@ mod tests {
 
         let msg = SignalingMessage::Login {
             token: "test".to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
 
         let result = client.send(msg.clone()).await;
@@ -777,6 +783,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -805,6 +812,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -848,6 +856,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -893,6 +902,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -936,6 +946,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -977,6 +988,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );
@@ -1018,6 +1030,7 @@ mod tests {
         let login_msg = tungstenite::Message::from(
             SignalingMessage::serialize(&SignalingMessage::Login {
                 token: "token1".to_string(),
+                protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
             })
             .unwrap(),
         );

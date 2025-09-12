@@ -11,6 +11,8 @@ pub enum LoginFailureReason {
     InvalidCredentials,
     /// The login flow was not completed in time, the client should reconnect and authenticate immediately.
     Timeout,
+    /// The client is using an unsupported protocol version.
+    IncompatibleProtocolVersion,
 }
 
 /// Possible reasons for a client or server error.
@@ -33,7 +35,7 @@ pub enum CallErrorReason {
     WebrtcFailure,
     /// The client failed to transmit or receive the call audio.
     AudioFailure,
-    /// The client is in an invalid call state. E.g. it received a [`SignalingMessage::CallAccept`] from a peer without previously sending a [`SignalingMessage::CallInvite`] message, or it already has an active call
+    /// The client is in an invalid call state. E.g., it received a [`SignalingMessage::CallAccept`] from a peer without previously sending a [`SignalingMessage::CallInvite`] message, or it already has an active call
     CallFailure,
     /// An error with the signaling connection to the peer occurred.
     SignalingFailure,
@@ -60,9 +62,12 @@ pub enum SignalingMessage {
     /// Upon successful login, a [`SignalingMessage::ClientList`] response will be returned, containing a list of all currently connected clients.
     ///
     /// Upon login failure (either due to the client's ID already being in use or due to an invalid auth token), a [`SignalingMessage::Error`] response will be returned.
+    #[serde(rename_all = "camelCase")]
     Login {
-        /// VATSIM access token received from OAuth2 flow, used to authenticate client and retrieve the user's CID server-side.
+        /// VATSIM access token received from OAuth2 flow, used to authenticate the client and retrieve the user's CID server-side.
         token: String,
+        /// Version of the vacs protocol implemented by the client.
+        protocol_version: String,
     },
     /// A login failure message sent by the signaling server after a failed login attempt.
     LoginFailure {
@@ -221,21 +226,30 @@ impl SignalingMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PROTOCOL_CRATE_VERSION;
     use pretty_assertions::assert_eq;
 
     #[test]
     fn test_serialize_deserialize_login() {
         let message = SignalingMessage::Login {
             token: "token1".to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
 
         let serialized = SignalingMessage::serialize(&message).unwrap();
-        assert_eq!(serialized, "{\"type\":\"Login\",\"token\":\"token1\"}");
+        assert_eq!(
+            serialized,
+            "{\"type\":\"Login\",\"token\":\"token1\",\"protocolVersion\":\"0.0.0\"}"
+        );
 
         let deserialized = SignalingMessage::deserialize(&serialized).unwrap();
         match deserialized {
-            SignalingMessage::Login { token } => {
+            SignalingMessage::Login {
+                token,
+                protocol_version,
+            } => {
                 assert_eq!(token, "token1");
+                assert_eq!(protocol_version, "0.0.0");
             }
             _ => panic!("Expected Login message"),
         }

@@ -85,6 +85,19 @@ impl UpdateChecker {
         tracing::debug!(?visible, ?release, "Update found");
         Ok(Some(release))
     }
+
+    #[instrument(level = "debug", skip(self))]
+    pub fn is_compatible_protocol(&self, protocol_version: Version) -> bool {
+        tracing::debug!("Checking client protocol version for compatibility");
+
+        let compatible = self.policy.is_compatible_protocol(&protocol_version);
+
+        tracing::debug!(
+            ?compatible,
+            "Checked client protocol version for compatibility"
+        );
+        compatible
+    }
 }
 
 impl Default for UpdateChecker {

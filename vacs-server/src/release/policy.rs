@@ -7,12 +7,14 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use tracing::instrument;
+use vacs_protocol::PROTOCOL_CRATE_VERSION;
 use vacs_protocol::http::version::ReleaseChannel;
 
 #[derive(Debug)]
 pub struct Policy {
     path: PathBuf,
     required_ranges: RwLock<HashMap<ReleaseChannel, Vec<VersionReq>>>,
+    compatible_protocol_range: RwLock<VersionReq>,
     visibility: RwLock<HashMap<ReleaseChannel, Vec<ReleaseChannel>>>,
 }
 
@@ -22,6 +24,7 @@ impl Policy {
         let policy = Self {
             path: path.into(),
             required_ranges: Default::default(),
+            compatible_protocol_range: Default::default(),
             visibility: Default::default(),
         };
         policy.reload()?;
@@ -59,6 +62,36 @@ impl Policy {
             );
         }
 
+        let compatible_protocol_range = VersionReq::parse(&raw_policy.compatible_protocol_range)
+            .with_context(|| {
+                format!(
+                    "invalid version req '{}' in compatible_protocol_range",
+                    raw_policy.compatible_protocol_range
+                )
+            })?;
+
+        let server_protocol_version = Version::parse(PROTOCOL_CRATE_VERSION)
+            .context("Failed to parse server protocol crate version")?;
+        if !compatible_protocol_range.matches(&server_protocol_version) {
+            return Err(anyhow::anyhow!(
+                "Protocol version {:?} implemented by server is incompatible with compatible_protocol_range {:?}",
+                server_protocol_version,
+                compatible_protocol_range
+            )
+            .into());
+        }
+
+        if compatible_protocol_range
+            .comparators
+            .iter()
+            .any(|comp| comp.op == semver::Op::Less || comp.op == semver::Op::LessEq)
+        {
+            return Err(anyhow::anyhow!(
+                "Compatible protocol range must not include a less or less equal comparator"
+            )
+            .into());
+        }
+
         let mut visibility = HashMap::new();
         for (k, list) in raw_policy.visibility {
             let parsed = list
@@ -76,6 +109,7 @@ impl Policy {
                 parsed,
             );
         }
+
         if visibility.is_empty() {
             visibility.insert(ReleaseChannel::Stable, vec![ReleaseChannel::Stable]);
             visibility.insert(
@@ -93,6 +127,7 @@ impl Policy {
         }
 
         *self.required_ranges.write() = required_ranges;
+        *self.compatible_protocol_range.write() = compatible_protocol_range;
         *self.visibility.write() = visibility;
 
         tracing::info!("Policy reloaded");
@@ -110,6 +145,10 @@ impl Policy {
         })
     }
 
+    pub fn is_compatible_protocol(&self, version: &Version) -> bool {
+        self.compatible_protocol_range.read().matches(version)
+    }
+
     pub fn visible_channels(&self, channel: ReleaseChannel) -> Vec<ReleaseChannel> {
         let visibility = self.visibility.read();
         visibility
@@ -123,6 +162,12 @@ impl Policy {
 struct RawPolicy {
     #[serde(default)]
     required_ranges: HashMap<String, Vec<String>>,
+    #[serde(default = "default_compatible_protocol_range")]
+    compatible_protocol_range: String,
     #[serde(default)]
     visibility: HashMap<String, Vec<String>>,
+}
+
+fn default_compatible_protocol_range() -> String {
+    ">=0.0.0".to_string()
 }

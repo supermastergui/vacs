@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use vacs_protocol::PROTOCOL_CRATE_VERSION;
 use vacs_protocol::ws::{ClientInfo, SignalingMessage};
 
 pub struct TestClient {
@@ -47,6 +48,7 @@ impl TestClient {
     {
         let login_msg = SignalingMessage::Login {
             token: self.token.to_string(),
+            protocol_version: PROTOCOL_CRATE_VERSION.to_string(),
         };
         self.send_and_expect_with_timeout(login_msg, Duration::from_millis(100), |msg| match msg {
             SignalingMessage::ClientList { clients } => client_list_predicate(&clients),
