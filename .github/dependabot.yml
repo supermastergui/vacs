@@ -9,7 +9,7 @@ updates:
       time: "05:30" # UTC
     open-pull-requests-limit: 20
     rebase-strategy: auto
-    versioning-strategy: increase-if-necessary # keeps Cargo.toml bumps minimal; updates Cargo.lock as needed
+    versioning-strategy: increase
     labels: ["dependencies", "rust"]
     groups:
       rust-patch-minor:
