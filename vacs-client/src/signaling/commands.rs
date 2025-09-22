@@ -12,8 +12,6 @@ use vacs_signaling::protocol::ws::SignalingMessage;
 #[tauri::command]
 #[vacs_macros::log_err]
 pub async fn signaling_connect(app: AppHandle) -> Result<(), Error> {
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
     app.state::<AppState>()
         .lock()
         .await
