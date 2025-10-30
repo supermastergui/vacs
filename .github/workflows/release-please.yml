@@ -22,7 +22,7 @@ jobs:
         id: release
         with:
           target-branch: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref != '' && github.event.inputs.ref || github.ref_name }}
-          token: '${{ secrets.RELEASE_PLEASE_PAT }}'
+          token: ${{ secrets.RELEASE_PLEASE_PAT }}
 
   update-lockfiles:
     needs: release-please
@@ -32,8 +32,6 @@ jobs:
       matrix:
         pr: ${{ fromJson(needs.release-please.outputs.prs) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout
@@ -41,6 +39,7 @@ jobs:
         with:
           ref: ${{ matrix.pr.headBranchName }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLEASE_PAT }}
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
