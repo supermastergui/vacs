@@ -3,15 +3,13 @@ import "../styles/call-list.css";
 import {CallListItem, useCallListStore} from "../stores/call-list-store.ts";
 import {clsx} from "clsx";
 import {HEADER_HEIGHT_REM, useCallList} from "../hooks/call-list-hook.ts";
-import {invokeStrict} from "../error.ts";
-import {useCallStore} from "../stores/call-store.ts";
+import {startCall, useCallStore} from "../stores/call-store.ts";
 import {Fragment} from "preact";
 
 function CallList() {
     const calls = useCallListStore(state => state.callList);
     const {clearCallList} = useCallListStore(state => state.actions);
     const callDisplay = useCallStore(state => state.callDisplay);
-    const {setOutgoingCall, removePeer} = useCallStore(state => state.actions);
 
     const {
         listContainer,
@@ -27,7 +25,7 @@ function CallList() {
         <div className="w-[37.5rem] h-full flex flex-col gap-3 p-3">
             <div
                 ref={listContainer}
-                className="h-full w-full grid grid-cols-[minmax(3rem,auto)_1fr_1fr_4rem] box-border gap-[1px] [&>div]:outline-1 [&>div]:outline-gray-500"
+                className="h-full w-full grid grid-cols-[minmax(3.5rem,auto)_1fr_1fr_4rem] box-border gap-[1px] [&>div]:outline-1 [&>div]:outline-gray-500"
                 style={{gridTemplateRows: `${HEADER_HEIGHT_REM}rem repeat(${visibleCallIndices.length},1fr)`}}
             >
                 {/*HEADER*/}
@@ -86,12 +84,7 @@ function CallList() {
                         onClick={async () => {
                             const peerId: string | undefined = calls[selectedCall]?.number;
                             if (peerId === undefined || callDisplay !== undefined) return;
-                            try {
-                                setOutgoingCall({id: peerId, displayName: peerId, frequency: ""});
-                                await invokeStrict("signaling_start_call", {peerId: peerId});
-                            } catch {
-                                removePeer(peerId);
-                            }
+                            await startCall(peerId);
                         }}
                 >
                     Call

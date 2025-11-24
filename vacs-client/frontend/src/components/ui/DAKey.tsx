@@ -2,7 +2,7 @@ import {ClientInfo, splitDisplayName} from "../../types/client-info.ts";
 import Button from "./Button.tsx";
 import {useAsyncDebounce} from "../../hooks/debounce-hook.ts";
 import {invokeStrict} from "../../error.ts";
-import {useCallStore} from "../../stores/call-store.ts";
+import {startCall, useCallStore} from "../../stores/call-store.ts";
 
 type DAKeyProps = {
     client: ClientInfo
@@ -13,12 +13,10 @@ function DAKey({client}: DAKeyProps) {
     const callDisplay = useCallStore(state => state.callDisplay);
     const incomingCalls = useCallStore(state => state.incomingCalls);
     const {
-        setOutgoingCall,
         acceptCall,
         endCall,
         dismissRejectedPeer,
-        dismissErrorPeer,
-        removePeer
+        dismissErrorPeer
     } = useCallStore(state => state.actions);
 
     const isCalling = incomingCalls.some(peer => peer.id === client.id);
@@ -34,26 +32,18 @@ function DAKey({client}: DAKeyProps) {
             try {
                 acceptCall(client);
                 await invokeStrict("signaling_accept_call", {peerId: client.id});
-            } catch {
-                removePeer(client.id);
-            }
+            } catch {}
         } else if (beingCalled || inCall) {
             try {
                 await invokeStrict("signaling_end_call", {peerId: client.id});
                 endCall();
-            } catch {
-            }
+            } catch {}
         } else if (isRejected) {
             dismissRejectedPeer();
         } else if (isError) {
             dismissErrorPeer();
         } else if (callDisplay === undefined) {
-            try {
-                setOutgoingCall(client);
-                await invokeStrict("signaling_start_call", {peerId: client.id});
-            } catch {
-                removePeer(client.id);
-            }
+            await startCall(client);
         }
     });
 

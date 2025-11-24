@@ -60,7 +60,7 @@ export function setupSignalingListeners() {
             listen<string>("signaling:peer-not-found", (event) => {
                 removeClient(event.payload);
                 removePeer(event.payload);
-                openErrorOverlay("Peer not found", `Can not find peer with CID ${event.payload}`, false, 5000);
+                openErrorOverlay("Peer not found", `Cannot find peer with CID ${event.payload}`, false, 5000);
             }),
             listen<{ incoming: boolean, peerId: string }>("signaling:add-to-call-list", (event) => {
                 const clientInfo = getClientInfo(event.payload.peerId);

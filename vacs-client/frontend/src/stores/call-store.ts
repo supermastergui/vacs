@@ -1,5 +1,9 @@
 import {create} from "zustand/react";
 import {ClientInfo} from "../types/client-info.ts";
+import {useSignalingStore} from "./signaling-store.ts";
+import {invokeSafe} from "../error.ts";
+import {useErrorOverlayStore} from "./error-overlay-store.ts";
+import {useAuthStore} from "./auth-store.ts";
 
 type ConnectionState = "connecting" | "connected" | "disconnected";
 
@@ -154,3 +158,21 @@ type StateSetter = {
     (partial: (CallState | Partial<CallState> | ((state: CallState) => (CallState | Partial<CallState>))), replace?: false): void
     (state: (CallState | ((state: CallState) => CallState)), replace: true): void
 };
+
+export const startCall = async (peerOrPeerId: ClientInfo | string) => {
+    const {setOutgoingCall}  = useCallStore.getState().actions;
+    const openErrorOverlay = useErrorOverlayStore.getState().open;
+    const {getClientInfo} = useSignalingStore.getState();
+    const {cid} = useAuthStore.getState();
+
+    const peerId = typeof peerOrPeerId === "string" ? peerOrPeerId : peerOrPeerId.id;
+    if (cid === peerId) {
+        openErrorOverlay("Call error", "You cannot call yourself", false, 5000);
+        return;
+    }
+
+    const peer = typeof peerOrPeerId === "string" ? getClientInfo(peerOrPeerId) : peerOrPeerId;
+
+    setOutgoingCall(peer);
+    await invokeSafe("signaling_start_call", {peerId});
+}

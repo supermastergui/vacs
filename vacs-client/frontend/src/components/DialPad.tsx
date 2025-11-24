@@ -1,37 +1,52 @@
 import Button from "./ui/Button.tsx";
 import {useDialPadInput} from "../hooks/dial-pad-hook.ts";
 import {clsx} from "clsx";
-import {JSX} from "preact";
+import {startCall, useCallStore} from "../stores/call-store.ts";
+import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
+import {TargetedEvent} from "preact";
+import {useSignalingStore} from "../stores/signaling-store.ts";
+import {useAuthStore} from "../stores/auth-store.ts";
+import {useCallListStore} from "../stores/call-list-store.ts";
 
-const DIAL_BUTTONS: {digit: string, chars: string}[] = [
-    { digit: "1", chars: ""},
-    { digit: "2", chars: "ABC"},
-    { digit: "3", chars: "DEF"},
-    { digit: "4", chars: "GHI"},
-    { digit: "5", chars: "JKL"},
-    { digit: "6", chars: "MNO"},
-    { digit: "7", chars: "PQRS"},
-    { digit: "8", chars: "TUV"},
-    { digit: "9", chars: "WXYZ"},
-    { digit: "*", chars: ""},
-    { digit: "0", chars: ""},
-    { digit: "#", chars: ""},
+const DIAL_BUTTONS: { digit: string, chars: string }[] = [
+    {digit: "1", chars: ""},
+    {digit: "2", chars: "ABC"},
+    {digit: "3", chars: "DEF"},
+    {digit: "4", chars: "GHI"},
+    {digit: "5", chars: "JKL"},
+    {digit: "6", chars: "MNO"},
+    {digit: "7", chars: "PQRS"},
+    {digit: "8", chars: "TUV"},
+    {digit: "9", chars: "WXYZ"},
+    {digit: "*", chars: ""},
+    {digit: "0", chars: ""},
+    {digit: "#", chars: ""},
 ];
 
 function DialPad() {
     const {dialInput, setDialInput, handleDialClick, clearLastChar, clearAll} = useDialPadInput();
+    const ownId = useAuthStore(state => state.cid);
     const isDialInputEmpty = dialInput === "";
+    const isDialInputOwnId = dialInput === ownId;
+    const isConnected = useSignalingStore(state => state.connectionState === "connected");
+    const callDisplay = useCallStore(state => state.callDisplay);
+    const lastDialledPeerId = useCallListStore(state => state.callList.find(item => item.type === "OUT")?.number);
 
-    const handleChange = (event: JSX.TargetedEvent<HTMLInputElement>) => {
+    const handleChange = (event: TargetedEvent<HTMLInputElement>) => {
         if (event.target instanceof HTMLInputElement) {
             const rawValue = event.target.value;
 
-            const sanitized = rawValue.toUpperCase().replace(/[^A-Z0-9*#]/g, "");
+            const sanitized = rawValue.toUpperCase().replace(/[^A-Z0-9*#]/g, "").slice(0, 8);
             event.target.value = sanitized;
 
             setDialInput(sanitized);
         }
     };
+
+    const handleStartCall = useAsyncDebounce(async (peerId: string | undefined) => {
+        if (peerId === undefined || callDisplay !== undefined) return;
+        await startCall(peerId);
+    });
 
     return (
         <div className="w-full flex flex-row [&_button]:h-15 [&_button]:shrink-0 [&_button]:rounded py-3">
@@ -42,7 +57,8 @@ function DialPad() {
                 </Button>
                 <Button color="cyan" disabled={true}/>
                 <Button color="cyan" disabled={true}/>
-                <Button color="gray">Redial</Button>
+                <Button color="gray" disabled={!lastDialledPeerId || !isConnected} onClick={() => handleStartCall(lastDialledPeerId)}
+                        title={!isConnected ? "Disconnected" : !lastDialledPeerId ? "No outgoing call in call list" : undefined}>Redial</Button>
             </div>
             <div>
                 <input
@@ -56,21 +72,25 @@ function DialPad() {
                 />
                 <div className="grid grid-cols-3 gap-3 [&>button]:w-27 mb-3">
                     {DIAL_BUTTONS.map(({digit, chars}, idx) =>
-                        <Button key={idx} color="gray" className="text-lg" onClick={() => handleDialClick(digit, chars)}>
+                        <Button key={idx} color="gray" className="text-lg"
+                                onClick={() => handleDialClick(digit, chars)}>
                             {chars !== "" ? (<p>{digit}<br/>{chars}</p>) : (<p>{digit}</p>)}
                         </Button>
                     )}
                 </div>
-                <Button color="gray" className="w-full text-xl" disabled={isDialInputEmpty} onClick={() => console.log("call", dialInput)}>Call</Button>
+                <Button color="gray" className="w-full text-xl"
+                        title={!isConnected ? "Disconnected" : isDialInputOwnId ? "You cannot call yourself" : undefined}
+                        disabled={isDialInputEmpty || isDialInputOwnId || !isConnected}
+                        onClick={() => handleStartCall(dialInput)}>Call</Button>
             </div>
             <div className="flex flex-col gap-3 px-4">
                 <Button color="gray" disabled={isDialInputEmpty}
-                    onClick={clearLastChar}
+                        onClick={clearLastChar}
                 >
                     ⟵
                 </Button>
                 <Button color="gray" disabled={isDialInputEmpty}
-                    onClick={clearAll}
+                        onClick={clearAll}
                 >
                     <p>Clear<br/>All</p>
                 </Button>
