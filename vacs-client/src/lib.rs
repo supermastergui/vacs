@@ -89,7 +89,7 @@ pub fn run() {
                             log::debug!("Set main window to be always on top");
                         }
                     } else {
-                        log::warn!("Your platform ({}) does not support always on top windows, setting is ignored.", capabilities.platform)
+                        log::warn!("Your platform ({}) does not support always on top windows, setting is ignored.", capabilities.platform);
                     }
                 }
 
@@ -134,7 +134,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app::commands::app_check_for_update,
             app::commands::app_frontend_ready,
-            app::commands::app_open_logs_folder,
+            app::commands::app_open_folder,
             app::commands::app_platform_capabilities,
             app::commands::app_quit,
             app::commands::app_reset_window_size,
@@ -163,6 +163,8 @@ pub fn run() {
             signaling::commands::signaling_connect,
             signaling::commands::signaling_disconnect,
             signaling::commands::signaling_end_call,
+            signaling::commands::signaling_get_stations_config,
+            signaling::commands::signaling_set_selected_stations_config_profile,
             signaling::commands::signaling_start_call,
             signaling::commands::signaling_terminate,
         ])

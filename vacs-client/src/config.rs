@@ -6,6 +6,7 @@ use anyhow::Context;
 use config::{Config, Environment, File};
 use keyboard_types::Code;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -19,6 +20,7 @@ pub static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CAR
 pub const WS_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const AUDIO_SETTINGS_FILE_NAME: &str = "audio.toml";
 pub const CLIENT_SETTINGS_FILE_NAME: &str = "client.toml";
+pub const STATIONS_SETTINGS_FILE_NAME: &str = "stations.toml";
 pub const ENCODED_AUDIO_FRAME_BUFFER_SIZE: usize = 512;
 pub const ICE_CONFIG_EXPIRY_LEEWAY: Duration = Duration::from_mins(15);
 
@@ -29,6 +31,7 @@ pub struct AppConfig {
     #[serde(alias = "webrtc")] // support for old naming scheme
     pub ice: IceConfig,
     pub client: ClientConfig,
+    pub stations: StationsConfig,
 }
 
 impl AppConfig {
@@ -48,22 +51,33 @@ impl AppConfig {
             .add_source(
                 File::with_name(
                     config_dir
-                        .join("audio.toml")
+                        .join(AUDIO_SETTINGS_FILE_NAME)
                         .to_str()
                         .expect("Failed to get local config path"),
                 )
                 .required(false),
             )
+            .add_source(File::with_name(AUDIO_SETTINGS_FILE_NAME).required(false))
             .add_source(
                 File::with_name(
                     config_dir
-                        .join("client.toml")
+                        .join(STATIONS_SETTINGS_FILE_NAME)
                         .to_str()
                         .expect("Failed to get local config path"),
                 )
                 .required(false),
             )
-            .add_source(File::with_name("audio.toml").required(false))
+            .add_source(File::with_name(STATIONS_SETTINGS_FILE_NAME).required(false))
+            .add_source(
+                File::with_name(
+                    config_dir
+                        .join(CLIENT_SETTINGS_FILE_NAME)
+                        .to_str()
+                        .expect("Failed to get local config path"),
+                )
+                .required(false),
+            )
+            .add_source(File::with_name(CLIENT_SETTINGS_FILE_NAME).required(false))
             .add_source(Environment::with_prefix("vacs_client"))
             .build()
             .context("Failed to build config")?
@@ -561,6 +575,135 @@ pub struct PersistedClientConfig {
 impl From<ClientConfig> for PersistedClientConfig {
     fn from(client: ClientConfig) -> Self {
         Self { client }
+    }
+}
+
+/// Configuration for how stations are handled client-side.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StationsConfig {
+    pub selected_profile: String,
+    /// Named profiles for different station filtering configurations.
+    /// Users can switch between profiles in the UI.
+    pub profiles: HashMap<String, StationsProfileConfig>,
+}
+
+impl Default for StationsConfig {
+    fn default() -> Self {
+        let mut profiles = HashMap::new();
+        profiles.insert("Default".to_string(), StationsProfileConfig::default());
+        Self {
+            selected_profile: "Default".to_string(),
+            profiles,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendStationsConfig {
+    pub selected_profile: String,
+    pub profiles: HashMap<String, StationsProfileConfig>,
+}
+
+impl From<StationsConfig> for FrontendStationsConfig {
+    fn from(stations_config: StationsConfig) -> Self {
+        Self {
+            selected_profile: stations_config.selected_profile,
+            profiles: stations_config.profiles,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct PersistedStationsConfig {
+    pub stations: StationsConfig,
+}
+
+impl From<StationsConfig> for PersistedStationsConfig {
+    fn from(stations: StationsConfig) -> Self {
+        Self { stations }
+    }
+}
+
+/// Config profile for how stations are filtered, prioritized and displayed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StationsProfileConfig {
+    /// Optional list of callsign patterns to include.
+    ///
+    /// - If this list is empty, all stations are eligible to be shown (subject to `exclude`).
+    /// - If this list is not empty, only stations matching at least one pattern are eligible to be shown.
+    ///
+    /// Glob syntax is supported: `"LO*"`, `"LOWW_*"`, `"*_APP"`, …
+    /// Matching is case-insensitive.
+    ///
+    /// Example:
+    ///   `["LO*", "EDDM_*", "EDMM_*"]`
+    #[serde(default)]
+    pub include: Vec<String>,
+
+    /// Optional list of callsign patterns to exclude.
+    ///
+    /// - Stations matching any pattern here are never shown, even if they match an `include` rule.
+    ///
+    /// Glob syntax is supported: `"LO*"`, `"LOWW_*"`, `"*_APP"`, …
+    /// Matching is case-insensitive.
+    ///
+    /// Example:
+    ///   `["*_TWR", "*_GND", "*_DEL"]`
+    #[serde(default)]
+    pub exclude: Vec<String>,
+
+    /// Optional ordered list of callsign patterns used to assign priority.
+    ///
+    /// The *first* matching pattern in the list determines the station's
+    /// priority bucket. Earlier entries = higher priority.
+    ///
+    /// Glob syntax is supported: `"LO*"`, `"LOWW_*"`, `"*_APP"`, …
+    /// Matching is case-insensitive.
+    ///
+    /// Example:
+    ///   `["LOVV_*", "LOWW_*_APP", "LOWW_*_TWR", "LOWW_*"]`
+    #[serde(default)]
+    pub priority: Vec<String>,
+
+    /// Optional alias mapping of frequencies to custom display names.
+    ///
+    /// - If a station's frequency matches a key in this map, the corresponding display name will be
+    ///   used instead of the one received from VATSIM.
+    /// - **Important**: Display names should follow the same underscore-separated format as VATSIM
+    ///   callsigns (e.g., `Station_Name_TYPE`) to ensure proper filtering, sorting and display.
+    ///   The last part after the final underscore is used as the station type.
+    /// - Frequency mapping is exact (no wildcard support).
+    ///
+    /// This is useful for:
+    /// - Customizing station names if the VATSIM callsign doesn't match the sector's desired display name
+    /// - Using local language or abbreviations (e.g., "Wien" instead of "LOWW")
+    /// - Providing a "stable" list of stations even when relieve/personalized callsigns are used
+    ///
+    /// Example:
+    /// ```toml
+    /// [stations.profiles.Default.aliases]
+    /// "132.600" = "AC_CTR"
+    /// "124.400" = "FIC_CTR"
+    /// ```
+    #[serde(default)]
+    pub aliases: HashMap<String, String>,
+}
+
+impl Default for StationsProfileConfig {
+    fn default() -> Self {
+        Self {
+            include: vec![],
+            exclude: vec![],
+            priority: vec![
+                "*_FMP".to_string(),
+                "*_CTR".to_string(),
+                "*_APP".to_string(),
+                "*_TWR".to_string(),
+                "*_GND".to_string(),
+            ],
+            aliases: HashMap::new(),
+        }
     }
 }
 
