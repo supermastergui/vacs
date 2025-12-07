@@ -618,14 +618,18 @@ impl Default for StationsConfig {
 #[serde(rename_all = "camelCase")]
 pub struct FrontendStationsConfig {
     pub selected_profile: String,
-    pub profiles: HashMap<String, StationsProfileConfig>,
+    pub profiles: HashMap<String, FrontendStationsProfileConfig>,
 }
 
 impl From<StationsConfig> for FrontendStationsConfig {
     fn from(stations_config: StationsConfig) -> Self {
         Self {
             selected_profile: stations_config.selected_profile,
-            profiles: stations_config.profiles,
+            profiles: stations_config
+                .profiles
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
         }
     }
 }
@@ -639,6 +643,18 @@ impl From<StationsConfig> for PersistedStationsConfig {
     fn from(stations: StationsConfig) -> Self {
         Self { stations }
     }
+}
+
+/// Mode for controlling how frequencies are displayed on DA keys.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub enum FrequencyDisplayMode {
+    /// Always show frequencies for all stations.
+    #[default]
+    ShowAll,
+    /// Hide frequencies only for stations that have an alias defined.
+    HideAliased,
+    /// Hide frequencies for all stations.
+    HideAll,
 }
 
 /// Config profile for how stations are filtered, prioritized and displayed.
@@ -704,6 +720,14 @@ pub struct StationsProfileConfig {
     /// ```
     #[serde(default)]
     pub aliases: HashMap<String, String>,
+
+    /// Control how frequencies are displayed on the DA keys.
+    ///
+    /// - `ShowAll`: Show frequency for all stations (default).
+    /// - `HideAliased`: Hide frequency if the station has an alias mapping.
+    /// - `HideAll`: Never show frequencies.
+    #[serde(default)]
+    pub frequencies: FrequencyDisplayMode,
 }
 
 impl Default for StationsProfileConfig {
@@ -719,6 +743,29 @@ impl Default for StationsProfileConfig {
                 "*_GND".to_string(),
             ],
             aliases: HashMap::new(),
+            frequencies: FrequencyDisplayMode::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendStationsProfileConfig {
+    pub include: Vec<String>,
+    pub exclude: Vec<String>,
+    pub priority: Vec<String>,
+    pub aliases: HashMap<String, String>,
+    pub frequencies: FrequencyDisplayMode,
+}
+
+impl From<StationsProfileConfig> for FrontendStationsProfileConfig {
+    fn from(stations_profile_config: StationsProfileConfig) -> Self {
+        Self {
+            include: stations_profile_config.include,
+            exclude: stations_profile_config.exclude,
+            priority: stations_profile_config.priority,
+            aliases: stations_profile_config.aliases,
+            frequencies: stations_profile_config.frequencies,
         }
     }
 }
