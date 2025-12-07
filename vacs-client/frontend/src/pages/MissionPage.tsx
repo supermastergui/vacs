@@ -2,6 +2,7 @@ import {clsx} from "clsx";
 import {useSignalingStore} from "../stores/signaling-store.ts";
 import {useShallow} from "zustand/react/shallow";
 import List from "../components/ui/List.tsx";
+import {invokeStrict} from "../error.ts";
 
 function MissionPage() {
     const profiles = useSignalingStore(useShallow(state => Object.keys(state.stationsConfigProfiles).sort()));
@@ -22,12 +23,15 @@ function MissionPage() {
                             className="w-80"
                             itemsCount={profiles.length}
                             selectedItem={selectedProfileIndex}
-                            setSelectedItem={(index) => {
+                            setSelectedItem={async (index) => {
                                 const profile = profiles[index];
                                 if (profile === undefined) return;
-                                setSelectedProfile(profile);
+                                try {
+                                    await invokeStrict("signaling_set_selected_stations_config_profile", {profile});
+                                    setSelectedProfile(profile);
+                                } catch {}
                             }}
-                            defaultColumns={6}
+                            defaultRows={6}
                             row={(index, isSelected, onClick) => ProfileRow(profiles[index], isSelected, onClick)}
                             header={[{title: "Profiles"}]}
                             columnWidths={["1fr"]}
@@ -41,10 +45,12 @@ function MissionPage() {
                                 <p>Exclude:</p><p>[{selectedProfile?.exclude.join(", ")}]</p>
                                 <p>Priority:</p><p>[{selectedProfile?.priority.join(", ")}]</p>
                                 <p>Alias:</p>
-                                <div className="grid grid-flow-row grid-cols-2 overflow-y-auto min-h-0">
-                                    {Object.entries(selectedProfile?.aliases ?? {}).sort().map(([key, value]) =>
-                                        <p className="h-min" key={key}>{`${key} => ${value}`}</p>
-                                    )}
+                                <div className="overflow-y-auto">
+                                    <div className="grid grid-flow-row grid-cols-2">
+                                        {Object.entries(selectedProfile?.aliases ?? {}).sort().map(([key, value]) =>
+                                            <p className="h-min" key={key}>{`${key} => ${value}`}</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>

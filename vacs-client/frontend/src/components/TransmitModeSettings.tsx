@@ -11,10 +11,13 @@ import KeyCapture from "./ui/KeyCapture.tsx";
 import {useCapabilitiesStore} from "../stores/capabilities-store.ts";
 import {clsx} from "clsx";
 import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
+import {TargetedEvent} from "preact";
+import {RadioState} from "../types/radio.ts";
+import {StatusColors} from "./ui/StatusIndicator.tsx";
+import {useRadioState} from "../hooks/radio-state-hook.ts";
 
 function TransmitModeSettings() {
     const capKeybindListener = useCapabilitiesStore(state => state.keybindListener);
-    const capKeybindEmitter = useCapabilitiesStore(state => state.keybindEmitter);
     const capPlatform = useCapabilitiesStore(state => state.platform);
     const [transmitConfig, setTransmitConfig] = useState<TransmitConfigWithLabels | undefined>(undefined);
     const [radioConfig, setRadioConfig] = useState<RadioConfigWithLabels | undefined>(undefined);
@@ -70,13 +73,13 @@ function TransmitModeSettings() {
                     </svg>
                 </div>
                 <div className="w-full grow px-3 flex flex-row gap-3 items-center justify-center">
-                    {!capKeybindEmitter ? (
+                    {!capKeybindListener ? (
                         <p className="text-sm text-gray-700 py-1.5 cursor-help"
-                            title={`Unfortunately, keybind emitters are not yet supported on ${capPlatform}`}
+                           title={`Unfortunately, keybind emitters are not yet supported on ${capPlatform}`}
                         >Not available.</p>
                     ) : transmitConfig !== undefined && radioConfig !== undefined ? (
                         <RadioIntegrationSettings transmitConfig={transmitConfig} radioConfig={radioConfig}
-                                             setRadioConfig={setRadioConfig}/>
+                                                  setRadioConfig={setRadioConfig}/>
                     ) : <p className="w-full text-center">Loading...</p>}
                 </div>
             </div>
@@ -89,7 +92,7 @@ type TransmitConfigSettingsProps = {
     setTransmitConfig: Dispatch<StateUpdater<TransmitConfigWithLabels | undefined>>;
 };
 
-function TransmitConfigSettings({ transmitConfig, setTransmitConfig }: TransmitConfigSettingsProps) {
+function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitConfigSettingsProps) {
     const capPlatform = useCapabilitiesStore(state => state.platform);
     const [waylandBinding, setWaylandBinding] = useState<string | undefined>(undefined);
 
@@ -160,7 +163,7 @@ function TransmitConfigSettings({ transmitConfig, setTransmitConfig }: TransmitC
 
     useEffect(() => {
         const fetchExternalBinding = async () => {
-            const binding = await invokeSafe<string | null>("keybinds_get_external_binding", { mode: transmitConfig.mode });
+            const binding = await invokeSafe<string | null>("keybinds_get_external_binding", {mode: transmitConfig.mode});
             setWaylandBinding(binding ?? undefined);
         };
 
@@ -182,7 +185,7 @@ function TransmitConfigSettings({ transmitConfig, setTransmitConfig }: TransmitC
                     {value: "VoiceActivation", text: "Voice activation"},
                     {value: "PushToTalk", text: "Push-to-talk"},
                     {value: "PushToMute", text: "Push-to-mute"},
-                    ...(capPlatform === "Windows" || capPlatform === "MacOs"
+                    ...(capPlatform === "Windows" || capPlatform === "MacOs" || capPlatform === "LinuxWayland"
                         ? [{value: "RadioIntegration", text: "Radio Integration"}]
                         : [])
                 ]}
@@ -215,6 +218,9 @@ type RadioIntegrationSettingsProps = {
 };
 
 function RadioIntegrationSettings({transmitConfig, radioConfig, setRadioConfig}: RadioIntegrationSettingsProps) {
+    const capKeybindEmitter = useCapabilitiesStore(state => state.keybindEmitter);
+    const [trackAudioEndpoint, setTrackAudioEndpoint] = useState<string>(radioConfig.trackAudio?.endpoint ?? "");
+
     const handleOnRadioIntegrationCapture = async (code: string) => {
         if (transmitConfig === undefined || transmitConfig.mode !== "RadioIntegration" || radioConfig === undefined) {
             return;
@@ -229,13 +235,8 @@ function RadioIntegrationSettings({transmitConfig, radioConfig, setRadioConfig}:
                     }
                 };
                 break;
-            case "TrackAudio":
-                newConfig = {
-                    ...radioConfig, trackAudio: {
-                        emit: code,
-                    }
-                };
-                break;
+            default:
+                return;
         }
 
         try {
@@ -272,13 +273,8 @@ function RadioIntegrationSettings({transmitConfig, radioConfig, setRadioConfig}:
                     }
                 };
                 break;
-            case "TrackAudio":
-                newConfig = {
-                    ...radioConfig, trackAudio: {
-                        emit: null
-                    }
-                };
-                break;
+            default:
+                return;
         }
 
         try {
@@ -288,24 +284,105 @@ function RadioIntegrationSettings({transmitConfig, radioConfig, setRadioConfig}:
         }
     };
 
+    const handleOnTrackAudioEndpointChange = (e: TargetedEvent<HTMLInputElement>) => {
+        if (!(e.target instanceof HTMLInputElement)) return;
+        setTrackAudioEndpoint(e.target.value);
+    };
+
+    const handleOnTrackAudioEndpointCommit = async () => {
+        if (transmitConfig === undefined || transmitConfig.mode !== "RadioIntegration" || radioConfig === undefined) {
+            return;
+        }
+
+        const endpoint = trackAudioEndpoint.trim() === "" ? null : trackAudioEndpoint.trim();
+        if (endpoint === radioConfig.trackAudio?.endpoint) return;
+
+        let newConfig: RadioConfig;
+        if (radioConfig.integration === "TrackAudio") {
+            newConfig = {
+                ...radioConfig, trackAudio: {
+                    endpoint: endpoint,
+                }
+            };
+            try {
+                await invokeStrict("keybinds_set_radio_config", {radioConfig: newConfig});
+                setRadioConfig(await withRadioLabels(newConfig));
+            } catch {
+                setTrackAudioEndpoint(radioConfig.trackAudio?.endpoint ?? "");
+            }
+        }
+    };
+
     return (
         <>
             <Select
-                className="!w-[21ch] h-full"
+                className="shrink-0 !w-[21ch] h-full"
                 name="radio-integration"
                 options={[
-                    {value: "AudioForVatsim", text: "Audio for Vatsim"},
+                    ...(capKeybindEmitter
+                        ? [{value: "AudioForVatsim", text: "Audio for Vatsim"}]
+                        : []),
                     {value: "TrackAudio", text: "TrackAudio"},
                 ]}
                 selected={radioConfig.integration}
                 onChange={handleOnRadioIntegrationChange}
                 disabled={transmitConfig.mode !== "RadioIntegration"}
             />
-            <KeyCapture
-                label={radioConfig.integration === "AudioForVatsim" ? radioConfig.audioForVatsim && radioConfig.audioForVatsim.emitLabel : radioConfig.trackAudio && radioConfig.trackAudio.emitLabel}
-                onCapture={handleOnRadioIntegrationCapture} onRemove={handleOnRadioIntegrationRemoveClick}
-                disabled={transmitConfig.mode !== "RadioIntegration"}/>
+            {radioConfig.integration === "TrackAudio" ? (
+                <div className="flex flex-row gap-2 items-center">
+                    <input
+                        type="text"
+                        className={clsx("w-full h-full px-3 py-1.5 border border-gray-700 bg-gray-300 rounded text-sm text-center focus:border-blue-500 focus:outline-none placeholder:text-gray-500",
+                            "disabled:brightness-90 disabled:cursor-not-allowed"
+                        )}
+                        placeholder="localhost:49080"
+                        title="The address where TrackAudio is running. Accepts a hostname or IP address, with an optional port (e.g., '192.168.1.69' or '192.168.1.69:49080'). If you're running TrackAudio on the same machine as vacs, you can leave this value empty as it will automatically attempt to connect to TrackAudio on its default listener at 'localhost:49080'."
+                        value={trackAudioEndpoint}
+                        onInput={handleOnTrackAudioEndpointChange}
+                        onBlur={handleOnTrackAudioEndpointCommit}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.currentTarget.blur();
+                            }
+                        }}
+                        disabled={transmitConfig.mode !== "RadioIntegration"}
+                    />
+                    <TrackAudioStatusIndicator/>
+                </div>
+            ) : (
+                <KeyCapture
+                    label={radioConfig.audioForVatsim?.emitLabel ?? null}
+                    onCapture={handleOnRadioIntegrationCapture} onRemove={handleOnRadioIntegrationRemoveClick}
+                    disabled={transmitConfig.mode !== "RadioIntegration"}/>
+            )}
         </>
+    );
+}
+
+const RadioStateColors: { [key in RadioState]: string } = {
+    NotConfigured: StatusColors["gray"],
+    Disconnected: StatusColors["red"],
+    Error: StatusColors["red"],
+    Connected: StatusColors["green"],
+    VoiceConnected: StatusColors["green"],
+    RxIdle: StatusColors["green"],
+    RxActive: StatusColors["green"],
+    TxActive: StatusColors["green"],
+};
+
+function TrackAudioStatusIndicator() {
+    const {state, canReconnect, handleButtonClick} = useRadioState();
+
+    return (
+        <div
+            className={clsx(
+                "shrink-0 h-3 w-3 rounded-full border",
+                RadioStateColors[state],
+                canReconnect && "cursor-pointer"
+            )}
+            onClick={handleButtonClick}
+            title={canReconnect ? "Reconnect to TrackAudio" : state !== "NotConfigured" ? "Connected to TrackAudio" : "Deactivated"}
+        ></div>
     );
 }
 

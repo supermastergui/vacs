@@ -1,42 +1,41 @@
 import Button from "./Button.tsx";
-import {useEffect, useState} from "preact/hooks";
 import {clsx} from "clsx";
-import {listen} from "@tauri-apps/api/event";
-import {invokeStrict} from "../../error.ts";
-
-type RadioButtonState = "disabled" | "enabled" | "pressed";
+import {useRadioState} from "../../hooks/radio-state-hook.ts";
 
 function RadioButton() {
-    const [state, setState] = useState<RadioButtonState>("disabled");
+    const {state, handleButtonClick} = useRadioState();
+    const disabled = state === "NotConfigured" || state === "Disconnected";
+    const textMuted = state === "NotConfigured";
 
-    useEffect(() => {
-        const fetchState = async () => {
-            try {
-                const hasRadio = await invokeStrict<boolean>("keybinds_has_radio");
-                setState(hasRadio ? "enabled" : "disabled");
-            } catch { }
-        };
-
-        void fetchState();
-
-        const unlisten1 = listen<boolean>("radio:integration-available", (event) => {
-            setState(state => event.payload ? (state !== "pressed" ? "enabled" : "pressed") : "disabled");
-        });
-
-        const unlisten2 = listen<"Active" | "Inactive">("radio:transmission-state", (event) => {
-            setState(event.payload === "Active" ? "pressed" : "enabled");
-        });
-
-        return () => {
-            unlisten1.then(fn => fn());
-            unlisten2.then(fn => fn());
-        };
-    }, []);
+    const buttonColor = () => {
+        switch (state) {
+            case "NotConfigured":
+            case "Disconnected":
+                return "gray";
+            case "Connected":
+            case "VoiceConnected":
+                return "gray";
+            case "RxIdle":
+                return "emerald";
+            case "RxActive":
+                return "cornflower";
+            case "TxActive":
+                return "cornflower";
+            case "Error":
+                return "red";
+            default:
+                return "gray";
+        }
+    };
 
     return (
-        <Button color={state === "disabled" ? "gray" : state === "enabled" ? "emerald" : "cornflower"}
-                disabled={state === "disabled"}
-                className={clsx("text-xl w-46", state === "disabled" && "text-gray-500")}>Radio</Button>
+        <Button color={buttonColor()}
+                disabled={state === "NotConfigured"}
+                softDisabled={disabled}
+                onClick={handleButtonClick}
+                className={clsx("text-xl w-46", textMuted && "text-gray-500")}>
+            Radio
+        </Button>
     );
 }
 
