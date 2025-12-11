@@ -86,7 +86,6 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.generate-token.outputs.token }}
-          branch: ${{ matrix.pr.headBranchName }}
           commit-message: 'chore(lockfile): refresh cargo & npm lockfiles after version bumps'
           sign-commits: 'true'
           add-paths: |
