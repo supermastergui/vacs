@@ -1,4 +1,4 @@
-import Select from "./ui/Select.tsx";
+import Select from "../ui/Select.tsx";
 import {Dispatch, StateUpdater, useEffect, useState} from "preact/hooks";
 import {
     withLabels,
@@ -9,16 +9,16 @@ import {
     withRadioLabels,
     RadioConfigWithLabels,
     isRadioIntegration,
-} from "../types/transmit.ts";
-import {invokeSafe, invokeStrict} from "../error.ts";
-import KeyCapture from "./ui/KeyCapture.tsx";
-import {useCapabilitiesStore} from "../stores/capabilities-store.ts";
+} from "../../types/transmit.ts";
+import {invokeSafe, invokeStrict} from "../../error.ts";
+import KeyCapture from "./KeyCapture.tsx";
+import {useCapabilitiesStore} from "../../stores/capabilities-store.ts";
 import {clsx} from "clsx";
-import {useAsyncDebounce} from "../hooks/debounce-hook.ts";
+import {useAsyncDebounce} from "../../hooks/debounce-hook.ts";
 import {TargetedEvent} from "preact";
-import {RadioState} from "../types/radio.ts";
-import {StatusColors} from "./ui/StatusIndicator.tsx";
-import {useRadioState} from "../hooks/radio-state-hook.ts";
+import {RadioState} from "../../types/radio.ts";
+import {StatusColors} from "../ui/StatusIndicator.tsx";
+import {useRadioState} from "../../hooks/radio-state-hook.ts";
 
 function TransmitModeSettings() {
     const capKeybindListener = useCapabilitiesStore(state => state.keybindListener);
@@ -45,12 +45,12 @@ function TransmitModeSettings() {
     }, [capKeybindListener]);
 
     return (
-        <div className="py-0.5 flex flex-col gap-2">
-            <div className="grow pt-1 flex flex-col gap-0.5">
-                <p className="text-center font-semibold uppercase border-t-2 border-zinc-200">
-                    Transmit Mode
+        <div className="h-full flex flex-col">
+            <div className="flex flex-col gap-0.5">
+                <p className="w-full mb-2 text-center border-b-2 border-zinc-200 uppercase font-semibold">
+                    Mode
                 </p>
-                <div className="w-full grow px-3 flex flex-row gap-3 items-center justify-center">
+                <div className="w-full px-3 flex flex-row gap-3 items-center justify-center">
                     {!capKeybindListener ? (
                         <p
                             className="text-sm text-gray-700 py-1.5 cursor-help"
@@ -67,35 +67,30 @@ function TransmitModeSettings() {
                         <p className="w-full text-center">Loading...</p>
                     )}
                 </div>
+                <p className="py-2 px-3 text-sm text-gray-800">
+                    <b>Voice activation:</b> Mic unmuted, toggle{" "}
+                    <span className="bg-[#92e1fe] border-2 border-t-cyan-100 border-l-cyan-100 border-r-cyan-950 border-b-cyan-950 rounded px-1 text-xs text-black font-semibold">
+                        RADIO PRIO
+                    </span>{" "}
+                    to mute.
+                    <br />
+                    <b>Push-to-talk:</b> Mic muted, press and hold key to talk in a call.
+                    <br />
+                    <b>Push-to-mute:</b> Mic unmuted, press and hold key to mute in a call.
+                    <br />
+                    <b>Radio Integration:</b> While not in a call, press and hold key to transmit on
+                    radio. During a call, the key will behave as a PTT key. Toggling{" "}
+                    <span className="bg-[#92e1fe] border-2 border-t-cyan-100 border-l-cyan-100 border-r-cyan-950 border-b-cyan-950 rounded px-1 text-xs text-black font-semibold">
+                        RADIO PRIO
+                    </span>{" "}
+                    forces radio transmission during a call.
+                </p>
             </div>
             <div className="grow flex flex-col gap-0.5">
-                <div className="w-full pt-1 flex flex-row gap-2 items-center justify-center border-t-2 border-zinc-200">
+                <div className="w-full pt-1 mb-1 flex flex-row gap-2 items-center justify-center border-t-2 border-zinc-200">
                     <p className="font-semibold uppercase">Radio Integration</p>
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="stroke-gray-600 cursor-help"
-                    >
-                        <title>
-                            Use one key for all transmissions. Configure the radio integration’s PTT
-                            key and let vacs press it automatically: when not in a call, pressing
-                            the vacs PTT keys your radio; in a call, it transmits on vacs; with
-                            RADIO PRIO enabled, you can (temporarily) key the radio without
-                            interrupting your coordination.
-                        </title>
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                        <path d="M12 17h.01" />
-                    </svg>
                 </div>
-                <div className="w-full grow px-3 flex flex-row gap-3 items-center justify-center">
+                <div className="w-full px-3 flex flex-row gap-3 items-center justify-center">
                     {!capKeybindListener ? (
                         <p
                             className="text-sm text-gray-700 py-1.5 cursor-help"
@@ -113,6 +108,44 @@ function TransmitModeSettings() {
                         <p className="w-full text-center">Loading...</p>
                     )}
                 </div>
+                {radioConfig?.integration === "AudioForVatsim" ? (
+                    <p className="py-2 px-3 text-sm text-gray-800 leading-4.5">
+                        vacs simulates a key press for you to trigger a radio transmission in AFV.{" "}
+                        <br />
+                        Set this key as your PTT key in AFV. You will not press it yourself, vacs
+                        will do so automatically for you. Choosing a rarely used key such as
+                        ScrollLock helps avoid accidental triggers. <br />
+                        <span className="font-semibold text-red-600">IMPORTANT:</span> Do{" "}
+                        <b className="uppercase">not</b> set the key configured in the
+                        &quot;Mode&quot; section above in AFV.
+                    </p>
+                ) : radioConfig?.integration === "TrackAudio" ? (
+                    <p className="py-2 px-3 text-sm text-gray-800 leading-4.5">
+                        vacs can connect to your TrackAudio client to trigger transmissions as well
+                        as monitor radio and frequency state.
+                        <br />
+                        <b>Note:</b> TrackAudio must be connected to VATSIM and tuned to at least
+                        one frequency for the radio to show a successful connection.
+                        <br />
+                        Connection status is indicated by the button color:{" "}
+                        <span className="bg-[#05cf9c] border-2 border-t-green-200 border-l-green-200 border-r-green-950 border-b-green-950 rounded px-1 text-xs text-black font-semibold">
+                            Radio
+                        </span>{" "}
+                        (idle and ready to receive),{" "}
+                        <span className="bg-[#5B95F9] border-2 border-t-blue-300 border-l-blue-300 border-r-blue-900 border-b-blue-900 rounded px-1 text-xs text-black font-semibold">
+                            Radio
+                        </span>{" "}
+                        (receiving or transmitting), or{" "}
+                        <span className="bg-red-500 border-2 border-t-red-200 border-l-red-200 border-r-red-900 border-b-red-900 rounded px-1 text-xs text-black font-semibold">
+                            Radio
+                        </span>{" "}
+                        (error). A gray button indicates the radio is not ready.
+                    </p>
+                ) : (
+                    <p className="py-2 px-3 text-sm text-gray-800 leading-4.5">
+                        How did you get here?
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -398,7 +431,7 @@ function RadioIntegrationSettings({
                 disabled={transmitConfig.mode !== "RadioIntegration"}
             />
             {radioConfig.integration === "TrackAudio" ? (
-                <div className="flex flex-row gap-2 items-center">
+                <div className="w-full flex flex-row gap-2 items-center">
                     <input
                         type="text"
                         className={clsx(
