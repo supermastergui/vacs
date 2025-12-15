@@ -24,6 +24,7 @@
 //! represented as a single `keyboard_types::Code`. To work around this, we map each
 //! transmit mode to a unique function key:
 //!
+//! - `CallControl` → `Code::F32`
 //! - `PushToTalk` → `Code::F33`
 //! - `PushToMute` → `Code::F34`
 //! - `RadioIntegration` → `Code::F35`
@@ -42,6 +43,7 @@
 mod listener;
 pub use listener::*;
 
+use crate::keybinds::Keybind;
 use ashpd::desktop::global_shortcuts::NewShortcut;
 use keyboard_types::Code;
 use std::str::FromStr;
@@ -58,6 +60,7 @@ pub enum PortalShortcutId {
     PushToTalk,
     PushToMute,
     RadioIntegration,
+    CallControl,
 }
 
 impl PortalShortcutId {
@@ -66,6 +69,7 @@ impl PortalShortcutId {
             PortalShortcutId::PushToTalk => "push_to_talk",
             PortalShortcutId::PushToMute => "push_to_mute",
             PortalShortcutId::RadioIntegration => "radio_integration",
+            PortalShortcutId::CallControl => "call_control",
         }
     }
 
@@ -74,6 +78,7 @@ impl PortalShortcutId {
             PortalShortcutId::PushToTalk => "Push-to-talk (activate voice transmission while held)",
             PortalShortcutId::PushToMute => "Push-to-mute (mute microphone while held)",
             PortalShortcutId::RadioIntegration => "Radio Integration",
+            PortalShortcutId::CallControl => "Call Control (end active/accept next)",
         }
     }
 
@@ -82,6 +87,7 @@ impl PortalShortcutId {
             PortalShortcutId::PushToTalk,
             PortalShortcutId::PushToMute,
             PortalShortcutId::RadioIntegration,
+            PortalShortcutId::CallControl,
         ]
     }
 
@@ -104,6 +110,7 @@ impl FromStr for PortalShortcutId {
             "push_to_talk" => Ok(PortalShortcutId::PushToTalk),
             "push_to_mute" => Ok(PortalShortcutId::PushToMute),
             "radio_integration" => Ok(PortalShortcutId::RadioIntegration),
+            "call_control" => Ok(PortalShortcutId::CallControl),
             _ => Err(format!("unknown portal shortcut id {s}")),
         }
     }
@@ -144,6 +151,7 @@ impl From<PortalShortcutId> for NewShortcut {
 impl From<PortalShortcutId> for Code {
     fn from(value: PortalShortcutId) -> Self {
         match value {
+            PortalShortcutId::CallControl => Code::F32,
             PortalShortcutId::PushToTalk => Code::F33,
             PortalShortcutId::PushToMute => Code::F34,
             PortalShortcutId::RadioIntegration => Code::F35,
@@ -155,10 +163,23 @@ impl TryFrom<Code> for PortalShortcutId {
     type Error = String;
     fn try_from(value: Code) -> Result<Self, Self::Error> {
         match value {
+            Code::F32 => Ok(PortalShortcutId::CallControl),
             Code::F33 => Ok(PortalShortcutId::PushToTalk),
             Code::F34 => Ok(PortalShortcutId::PushToMute),
             Code::F35 => Ok(PortalShortcutId::RadioIntegration),
             _ => Err(format!("unknown portal shortcut code {value}")),
+        }
+    }
+}
+
+impl From<Keybind> for PortalShortcutId {
+    fn from(value: Keybind) -> Self {
+        match value {
+            Keybind::PushToTalk => PortalShortcutId::PushToTalk,
+            Keybind::PushToMute => PortalShortcutId::PushToMute,
+            Keybind::RadioIntegration => PortalShortcutId::RadioIntegration,
+            Keybind::AcceptCall => PortalShortcutId::CallControl,
+            Keybind::EndCall => PortalShortcutId::CallControl,
         }
     }
 }

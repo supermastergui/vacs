@@ -1,13 +1,14 @@
 use crate::app::state::AppState;
 use crate::config::{
-    CLIENT_SETTINGS_FILE_NAME, FrontendRadioConfig, FrontendTransmitConfig, Persistable,
-    PersistedClientConfig, RadioConfig, TransmitConfig, TransmitMode,
+    CLIENT_SETTINGS_FILE_NAME, FrontendKeybindsConfig, FrontendRadioConfig, FrontendTransmitConfig,
+    KeybindsConfig, Persistable, PersistedClientConfig, RadioConfig, TransmitConfig, TransmitMode,
 };
 use crate::error::Error;
-use crate::keybinds::KeybindsError;
 use crate::keybinds::engine::KeybindEngineHandle;
+use crate::keybinds::{Keybind, KeybindsError};
 use crate::platform::Capabilities;
 use crate::radio::{RadioIntegration, RadioState};
+use keyboard_types::Code;
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
@@ -48,10 +49,64 @@ pub async fn keybinds_set_transmit_config(
         keybind_engine
             .write()
             .await
-            .set_config(&transmit_config)
+            .set_config(&transmit_config, &state.config.client.keybinds)
             .await?;
 
         state.config.client.transmit_config = transmit_config;
+        state.config.client.clone().into()
+    };
+
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .expect("Cannot get config directory");
+    persisted_client_config.persist(&config_dir, CLIENT_SETTINGS_FILE_NAME)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+#[vacs_macros::log_err]
+pub async fn keybinds_get_keybinds_config(
+    app_state: State<'_, AppState>,
+) -> Result<FrontendKeybindsConfig, Error> {
+    Ok(app_state.lock().await.config.client.keybinds.clone().into())
+}
+
+#[tauri::command]
+#[vacs_macros::log_err]
+pub async fn keybinds_set_binding(
+    app: AppHandle,
+    app_state: State<'_, AppState>,
+    keybind_engine: State<'_, KeybindEngineHandle>,
+    code: Option<String>,
+    keybind: Keybind,
+) -> Result<(), Error> {
+    let capabilities = Capabilities::default();
+    if !capabilities.keybind_listener {
+        return Err(Error::CapabilityNotAvailable("Keybinds".to_string()));
+    }
+
+    let code = code.as_ref().map(|s| s.parse::<Code>()).transpose().map_err(|_| Error::Other(Box::new(anyhow::anyhow!("Unrecognized key code: {}. Please report this error in our GitHub repository's issue tracker.", code.unwrap_or_default()))))?;
+
+    let persisted_client_config: PersistedClientConfig = {
+        let mut state = app_state.lock().await;
+
+        let mut keybinds_config: KeybindsConfig = state.config.client.keybinds.clone();
+
+        match keybind {
+            Keybind::AcceptCall => keybinds_config.accept_call = code,
+            Keybind::EndCall => keybinds_config.end_call = code,
+            _ => {}
+        }
+
+        keybind_engine
+            .write()
+            .await
+            .set_config(&state.config.client.transmit_config, &keybinds_config)
+            .await?;
+
+        state.config.client.keybinds = keybinds_config;
         state.config.client.clone().into()
     };
 
@@ -128,13 +183,13 @@ pub async fn keybinds_get_radio_state(
 #[vacs_macros::log_err]
 pub async fn keybinds_get_external_binding(
     keybind_engine: State<'_, KeybindEngineHandle>,
-    mode: TransmitMode,
+    keybind: Keybind,
 ) -> Result<Option<String>, Error> {
     let capabilities = Capabilities::default();
     if !capabilities.keybind_listener {
         return Err(Error::CapabilityNotAvailable("Keybinds".to_string()));
     }
-    Ok(keybind_engine.read().await.get_external_binding(mode))
+    Ok(keybind_engine.read().await.get_external_binding(keybind))
 }
 
 #[tauri::command]

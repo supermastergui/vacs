@@ -1,7 +1,7 @@
 import Select from "../ui/Select.tsx";
 import {Dispatch, StateUpdater, useEffect, useState} from "preact/hooks";
 import {
-    withLabels,
+    withTransmitLabels,
     isTransmitMode,
     TransmitConfig,
     TransmitConfigWithLabels,
@@ -19,6 +19,7 @@ import {TargetedEvent} from "preact";
 import {RadioState} from "../../types/radio.ts";
 import {StatusColors} from "../ui/StatusIndicator.tsx";
 import {useRadioState} from "../../hooks/radio-state-hook.ts";
+import {transmitModeToKeybind} from "../../types/keybinds.ts";
 
 function TransmitModeSettings() {
     const capKeybindListener = useCapabilitiesStore(state => state.keybindListener);
@@ -35,7 +36,7 @@ function TransmitModeSettings() {
             const radioConfig = await invokeSafe<RadioConfig>("keybinds_get_radio_config");
             if (radioConfig === undefined) return;
 
-            setTransmitConfig(await withLabels(transmitConfig));
+            setTransmitConfig(await withTransmitLabels(transmitConfig));
             setRadioConfig(await withRadioLabels(radioConfig));
         };
 
@@ -178,7 +179,7 @@ function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitCon
 
         try {
             await invokeStrict("keybinds_set_transmit_config", {transmitConfig: newConfig});
-            setTransmitConfig(await withLabels(newConfig));
+            setTransmitConfig(await withTransmitLabels(newConfig));
         } catch {}
     };
 
@@ -215,7 +216,7 @@ function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitCon
 
         try {
             await invokeStrict("keybinds_set_transmit_config", {transmitConfig: newConfig});
-            setTransmitConfig(await withLabels(newConfig));
+            setTransmitConfig(await withTransmitLabels(newConfig));
         } catch {}
     };
 
@@ -225,8 +226,14 @@ function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitCon
 
     useEffect(() => {
         const fetchExternalBinding = async () => {
+            const keybind = transmitModeToKeybind(transmitConfig.mode);
+            if (keybind === null) {
+                setWaylandBinding(undefined);
+                return;
+            }
+
             const binding = await invokeSafe<string | null>("keybinds_get_external_binding", {
-                mode: transmitConfig.mode,
+                keybind,
             });
             setWaylandBinding(binding ?? undefined);
         };
@@ -267,14 +274,14 @@ function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitCon
                             : ""
                     }
                     className={clsx(
-                        "w-full h-full min-h-8 grow truncate text-sm py-1 px-2 rounded text-center flex items-center justify-center",
+                        "w-full h-full min-w-0 min-h-8 grow text-sm py-1 px-2 rounded text-center flex items-center justify-center",
                         "bg-gray-300 border-2 border-t-gray-100 border-l-gray-100 border-r-gray-700 border-b-gray-700",
                         "brightness-90 cursor-help",
                         transmitConfig.mode === "VoiceActivation" &&
                             "brightness-90 cursor-not-allowed",
                     )}
                 >
-                    <p>
+                    <p className="truncate max-w-full">
                         {transmitConfig.mode !== "VoiceActivation"
                             ? waylandBinding || "Not bound"
                             : ""}
@@ -287,7 +294,9 @@ function TransmitConfigSettings({transmitConfig, setTransmitConfig}: TransmitCon
                             ? transmitConfig.pushToTalkLabel
                             : transmitConfig.mode === "PushToMute"
                               ? transmitConfig.pushToMuteLabel
-                              : transmitConfig.radioPushToTalkLabel
+                              : transmitConfig.mode === "RadioIntegration"
+                                ? transmitConfig.radioPushToTalkLabel
+                                : ""
                     }
                     onCapture={handleOnTransmitCapture}
                     onRemove={handleOnTransmitRemoveClick}

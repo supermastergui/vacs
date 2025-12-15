@@ -40,7 +40,7 @@
 
 use crate::keybinds::runtime::KeybindListener;
 use crate::keybinds::runtime::linux::wayland::PortalShortcutId;
-use crate::keybinds::{KeyEvent, KeybindsError};
+use crate::keybinds::{KeyEvent, Keybind, KeybindsError};
 use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut, Shortcut};
 use ashpd::zbus::export::futures_core::Stream;
 use futures_util::StreamExt;
@@ -144,12 +144,8 @@ impl KeybindListener for WaylandKeybindListener {
         }
     }
 
-    fn get_external_binding(&self, mode: crate::config::TransmitMode) -> Option<String> {
-        if let Some(id) = PortalShortcutId::from_transmit_mode(mode) {
-            self.get_shortcut_binding(id)
-        } else {
-            None
-        }
+    fn get_external_binding(&self, keybind: Keybind) -> Option<String> {
+        self.get_shortcut_binding(PortalShortcutId::from(keybind))
     }
 }
 
@@ -311,16 +307,20 @@ async fn check_existing_shortcuts(
             let shortcuts = response.shortcuts();
             log::trace!("Found {} existing shortcuts", shortcuts.len());
 
-            let own_ids = PortalShortcutId::all()
+            let existing_ids = shortcuts.iter().map(|s| s.id()).collect::<Vec<_>>();
+            if PortalShortcutId::all()
                 .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>();
-            if shortcuts.iter().any(|s| own_ids.contains(&s.id())) {
-                log::trace!("Existing shortcuts found, skipping binding");
+                .all(|id| existing_ids.contains(&id.as_str()))
+            {
+                log::trace!("All required shortcuts found, skipping binding");
                 update_shortcuts_map(shortcuts_map, shortcuts);
                 Ok(false)
             } else {
-                log::trace!("No matching shortcuts found, binding");
+                log::trace!(
+                    "Missing shortcuts found (have {}/{}), binding",
+                    shortcuts.len(),
+                    PortalShortcutId::all().len()
+                );
                 Ok(true)
             }
         }
